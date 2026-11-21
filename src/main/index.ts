@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerGithubIpc } from './github'
+import { registerClaudeAgentsIpc } from './claudeAgents'
 import { registerGeminiHandlers } from './gemini/ipc'
 import { registerIndexingIpc } from './indexing/ipc'
 import { registerBackendIpc } from './backend/ipc'
@@ -54,6 +55,7 @@ app.whenReady().then(() => {
   })
 
   registerGithubIpc()
+  registerClaudeAgentsIpc()
   registerGeminiHandlers()
   registerIndexingIpc()
   // Threads, design, approvals, coding runs and verdicts. Fails closed if storage is unavailable.

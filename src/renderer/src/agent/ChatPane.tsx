@@ -7,6 +7,7 @@ import {
   useRef,
   useState
 } from 'react'
+import { SendToClaude } from './SendToClaude'
 import type { DraftState, EvidenceRecord, Proposal, TurnRecord } from '../../../shared/design'
 import {
   DESIGN_MODELS,
@@ -489,6 +490,10 @@ function ProposalCard({
     : PROPOSAL_STATUS[proposal.status]
   const { revise } = useContext(PaneActions)
   const { plan } = proposal
+  // "Accept & send" approves first; the picker opens once the proposal reads as approved.
+  const [sendOpen, setSendOpen] = useState(false)
+  const [sendAfterApprove, setSendAfterApprove] = useState(false)
+  const picking = sendOpen || (sendAfterApprove && proposal.status === 'approved')
   return (
     <section
       className="chat-proposal"
@@ -601,7 +606,40 @@ function ProposalCard({
           >
             {chat.deciding === proposal.id ? 'Approving…' : 'Approve'}
           </button>
+          <button
+            type="button"
+            className="dg-btn dg-btn--primary"
+            disabled={busy}
+            title="Approve, then pick a Claude Code agent on this computer to build it"
+            onClick={() => {
+              setSendAfterApprove(true)
+              void chat.approve(proposal)
+            }}
+          >
+            Accept &amp; send to Claude…
+          </button>
         </div>
+      )}
+      {proposal.status === 'approved' && (
+        <div className="chat__actions">
+          <button
+            type="button"
+            className="dg-btn"
+            title="Pick a Claude Code agent on this computer to build this change"
+            onClick={() => setSendOpen(true)}
+          >
+            Send to Claude agent…
+          </button>
+        </div>
+      )}
+      {picking && (
+        <SendToClaude
+          proposal={proposal}
+          onClose={() => {
+            setSendOpen(false)
+            setSendAfterApprove(false)
+          }}
+        />
       )}
     </section>
   )

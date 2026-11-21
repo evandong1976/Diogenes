@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { ClaudeAgent, ClaudeSendResult } from '../shared/claudeAgents'
 import { catalogChannels, type CatalogApi } from '../shared/catalog'
 import { geminiChannels, type DiogenesApi } from '../shared/gemini'
 import { indexingChannels, type IndexStatus, type IndexingApi } from '../shared/indexing'
@@ -121,6 +122,15 @@ const api = {
     logout: (): Promise<void> => invoke('github:logout'),
     listRepos: (): Promise<GithubRepo[]> => invoke('github:listRepos'),
     createRepo: (repo: NewRepo): Promise<GithubRepo> => invoke('github:createRepo', repo)
+  },
+  /** Claude Code agents running on this machine, and handing them an approved change. */
+  claude: {
+    listAgents: (projectId: string): Promise<ClaudeAgent[]> =>
+      invoke('claude:listAgents', projectId),
+    send: (sessionId: string, prompt: string): Promise<ClaudeSendResult> =>
+      invoke('claude:send', sessionId, prompt),
+    /** Asks for a folder, then starts a new background agent there. Null if cancelled. */
+    sendNew: (prompt: string): Promise<ClaudeSendResult | null> => invoke('claude:sendNew', prompt)
   }
 }
 
