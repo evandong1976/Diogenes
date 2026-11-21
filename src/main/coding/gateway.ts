@@ -347,14 +347,16 @@ export class CodingRunGateway implements CodingRunApi {
   ): Promise<void> {
     turn.providerStatus = interaction.status
     run.environmentId ??= interaction.environmentId
-    run.activity = [
-      ...run.activity.filter((a) => a.turn !== turn.index),
-      ...interaction.steps.map((s): CodingActivity => ({
-        turn: turn.index,
-        kind: s.type,
-        text: s.text.slice(0, textLimit)
-      }))
-    ].slice(-activityLimit)
+    if (interaction.steps.length || !isActive(interaction.status)) {
+      run.activity = [
+        ...run.activity.filter((a) => a.turn !== turn.index),
+        ...interaction.steps.map((s): CodingActivity => ({
+          turn: turn.index,
+          kind: s.type,
+          text: s.text.slice(0, textLimit)
+        }))
+      ].slice(-activityLimit)
+    }
 
     if (isActive(interaction.status)) {
       run.phase = 'running'
