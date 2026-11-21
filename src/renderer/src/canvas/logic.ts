@@ -1,4 +1,4 @@
-import type { CurrentGraph, ProposedEdit } from '../../../shared/gemini'
+import type { CurrentGraph, ManagedAgentResult, ProposedEdit } from '../../../shared/gemini'
 import example from '../../../../fixtures/background-job/example.json'
 
 // Saved Gemini responses, so the canvas works without an API key.
@@ -10,6 +10,11 @@ export interface LogicState {
   /** Where the graph came from, shown in the toolbar. */
   source: string
   isExample: boolean
+  approved?: { graph: CurrentGraph; edit: ProposedEdit }
+  managed?:
+    | { kind: 'running' }
+    | { kind: 'done'; result: ManagedAgentResult }
+    | { kind: 'error'; message: string }
   /** Bumped on every change so the view refits. */
   version: number
 }

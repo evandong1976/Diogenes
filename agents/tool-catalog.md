@@ -11,6 +11,10 @@ Both run through the [typed preload bridge](../src/preload/index.ts) and use [ma
 
 For `kind: 'edit'`, preview the replacement on a copy of the graph. Remove the transition identified by `replaceTransitionId` and append `addStates` and `addTransitions`. For `kind: 'clarification'`, display `question` and let the user revise the markup. Both calls can reject on invalid input, invalid output, or an API failure.
 
+## Managed coding agent
+
+`window.api.gemini.runManagedRetry(graph, proposal)` runs after the user approves a retry-once edit on the bundled background-job example. The main process sends the validated edit and bundled fixture to Antigravity with Gemini 4 Carbon. It returns the remote acceptance checks and diff through the preload bridge. [Fixture verification](../fixtures/background-job/verify-retry.mjs).
+
 ## Proposed tools
 
 These are ownership targets for teammates. Add a callable name here when its interface exists.

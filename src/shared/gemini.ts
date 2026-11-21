@@ -96,6 +96,11 @@ export interface CaptureRect {
   height: number
 }
 
+export interface ManagedAgentResult {
+  diff: string
+  tests: { name: string; passed: boolean }[]
+}
+
 export interface DiogenesApi {
   gemini: {
     /** The bundled background-job fixture. */
@@ -106,6 +111,7 @@ export interface DiogenesApi {
     buildRepoGraph(repo: RepoRef): Promise<RepoGraph>
     buildArchitecture(repo: RepoRef): Promise<Architecture>
     proposeEdit(graph: CurrentGraph, png: Uint8Array): Promise<ProposalResult>
+    runManagedRetry(graph: CurrentGraph, proposal: ProposedEdit): Promise<ManagedAgentResult>
   }
   canvas: {
     /** Screenshots part of the window, for sending canvas markup to Gemini. */
@@ -119,5 +125,6 @@ export const geminiChannels = {
   buildRepoGraph: 'gemini:build-repo-graph',
   buildArchitecture: 'gemini:build-architecture',
   proposeEdit: 'gemini:propose-edit',
+  runManagedRetry: 'gemini:run-managed-retry',
   capture: 'canvas:capture'
 } as const
