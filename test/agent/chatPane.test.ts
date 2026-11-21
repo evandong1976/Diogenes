@@ -79,7 +79,7 @@ const chat = (project: ProjectState, events: ThreadEvent[], pending: boolean): D
   }) as unknown as DesignChat
 
 const render = (c: DesignChat): string =>
-  renderToStaticMarkup(createElement(ChatPane, { chat: c, selected: null, onClose: () => {} }))
+  renderToStaticMarkup(createElement(ChatPane, { chat: c, selected: null }))
 
 const project = (turn: TurnRecord): ProjectState =>
   ({
@@ -92,13 +92,13 @@ const project = (turn: TurnRecord): ProjectState =>
   }) as ProjectState
 
 describe('design chat activity trace', () => {
-  it('shows a working state before the backend records any tool call', () => {
+  it('shows a quiet working line before the backend records any tool call', () => {
     const html = render(chat(project({ ...running, toolCalls: [], evidence: [] }), [], true))
-    expect(html).toContain('Working · no tool calls yet')
-    expect(html).toContain('Waiting for the first tool call…')
+    expect(html).toContain('Working…')
+    expect(html).toContain('chat__pulse')
   })
 
-  it('shows the running turn’s recorded tool calls and sources before the reply', () => {
+  it('shows the newest recorded step while running, with every step behind the fold', () => {
     const events = [
       {
         id: 'turn:t1:developer',
@@ -109,24 +109,22 @@ describe('design chat activity trace', () => {
       } as ThreadEvent
     ]
     const html = render(chat(project(running), events, true))
-    expect(html).toContain('Working · 2 tool calls · 1 source')
+    expect(html).toContain('Working · Read src/retry.ts:12-40')
     expect(html).toContain('Inspected Refund retry (1 in, 2 out)')
-    expect(html).toContain('Read src/retry.ts:12-40')
     expect(html).toContain('src/retry.ts')
     expect(html).toContain('12–40')
-    expect(html).toContain('Waiting for the next step…')
-    expect(html).toMatch(/<details[^>]*open/)
-    // The running turn appears once, as the pending send, with no reply yet.
+    // Quiet by default: the trace is collapsed until the reader opens it.
+    expect(html).not.toMatch(/<details[^>]*open/)
+    // The running turn appears once, as the pending send.
     expect(html.match(/Allow three attempts/g)).toHaveLength(1)
-    expect(html).toContain('The reply appears when the turn finishes.')
   })
 
-  it('keeps the trace collapsed after the turn, and marks a failed one', () => {
+  it('folds a finished trace into one line, and marks a failed one', () => {
     const done = { ...running, status: 'completed' as const, reply: 'Attempt3 is needed.' }
     const finished = render(chat(project(done), [], false))
-    expect(finished).toContain('2 tool calls · 1 source')
-    expect(finished).not.toMatch(/<details[^>]*open/)
+    expect(finished).toContain('Used 2 tools · 1 source')
     expect(finished).toContain('Attempt3 is needed.')
+    expect(finished).not.toContain('Done')
 
     const failed = {
       ...running,
@@ -135,8 +133,26 @@ describe('design chat activity trace', () => {
       toolCalls: [{ ...running.toolCalls[0], ok: false, summary: 'Component sm:x not found' }]
     }
     const html = render(chat(project(failed), [], false))
-    expect(html).toContain('Failed after 1 tool call · 1 source · 1 failed')
+    expect(html).toContain('Failed after 1 tool · 1 source · 1 failed')
     expect(html).toContain('Component sm:x not found')
     expect(html).toContain('Gemini API 503')
+  })
+})
+
+describe('design chat composer', () => {
+  it('swaps Send for Stop while a turn runs, keeping the model visible', () => {
+    const html = render(chat(project(running), [], true))
+    expect(html).toContain('Stop')
+    expect(html).not.toContain('Send <span')
+    expect(html).toContain('aria-label="Model for the next turn: gemini-4-carbon"')
+  })
+
+  it('opens a new thread quietly, with no suggestions or attachment hint', () => {
+    const empty = { ...chat(project(running), [], false), activeId: null } as DesignChat
+    const html = render({ ...empty, project: { ...empty.project!, turns: [] } } as DesignChat)
+    expect(html).not.toContain('chat__turn')
+    expect(html).not.toContain('retry attempt')
+    expect(html).not.toContain('chat__context')
+    expect(html).toContain('Send <span')
   })
 })

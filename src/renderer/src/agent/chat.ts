@@ -206,16 +206,18 @@ export function activityTrace(turn: TurnRecord | null): ActivityTrace {
   const evidence = turn?.evidence ?? []
   const failed = steps.filter((s) => !s.ok).length
   const counts = [
-    plural(steps.length, 'tool call'),
+    plural(steps.length, 'tool'),
     ...(evidence.length ? [plural(evidence.length, 'source')] : []),
     ...(failed ? [`${failed} failed`] : [])
   ].join(' · ')
+  const latest = steps[steps.length - 1]
 
-  if (!turn) return { phase: 'working', headline: 'Starting the turn…', steps, evidence }
+  if (!turn) return { phase: 'working', headline: 'Working…', steps, evidence }
   if (turn.status === 'running')
     return {
       phase: 'working',
-      headline: steps.length ? `Working · ${counts}` : 'Working · no tool calls yet',
+      // The newest recorded step is the live status; nothing is shown until one exists.
+      headline: latest ? `Working · ${latest.summary}` : 'Working…',
       steps,
       evidence
     }
@@ -226,5 +228,5 @@ export function activityTrace(turn: TurnRecord | null): ActivityTrace {
       steps,
       evidence
     }
-  return { phase: 'done', headline: counts, steps, evidence }
+  return { phase: 'done', headline: `Used ${counts}`, steps, evidence }
 }

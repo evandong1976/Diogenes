@@ -183,6 +183,18 @@ export interface Workspace {
   focusFile: string | null
   /** Reports the selected canvas node's catalog component (or null), for the design chat. */
   onSelectComponent(selection: ComponentSelection | null): void
+  /** Which side panes are open; the toolbars carry the controls that reopen them. */
+  panes: Panes
+}
+
+/** The collapsible panes around the canvas. The left pane holds Chat and Project tabs. */
+export interface Panes {
+  left: boolean
+  inspector: boolean
+  /** What the left pane shows, so its toggle can say what it reopens. */
+  leftTab: 'chat' | 'project'
+  setLeft(open: boolean): void
+  setInspector(open: boolean): void
 }
 
 /** A catalog component picked on the canvas. `componentId` is a catalog node ID. */
@@ -193,7 +205,14 @@ export const WorkspaceContext = createContext<Workspace>({
   draft: emptyDraft,
   setDraft: () => {},
   focusFile: null,
-  onSelectComponent: () => {}
+  onSelectComponent: () => {},
+  panes: {
+    left: true,
+    inspector: true,
+    leftTab: 'project',
+    setLeft: () => {},
+    setInspector: () => {}
+  }
 })
 
 export const useWorkspace = (): Workspace => useContext(WorkspaceContext)

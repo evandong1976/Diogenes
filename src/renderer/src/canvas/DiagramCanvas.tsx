@@ -30,6 +30,7 @@ import {
   useWorkspace,
   type ComponentSelection
 } from './components'
+import { PaneToggle } from './PaneToggle'
 import type { CatalogProtocol } from '../../../shared/catalog'
 import { brandFor, methodOf, shapeFor, type Brand } from './brands'
 
@@ -230,7 +231,7 @@ export function DiagramCanvas({
   overlay,
   componentFor = catalogSelection
 }: Props): React.JSX.Element {
-  const { draft, setDraft, focusFile, levelTag, onSelectComponent } = useWorkspace()
+  const { draft, setDraft, focusFile, levelTag, onSelectComponent, panes } = useWorkspace()
   const [selectedId, setSelectedId] = useState<{ kind: 'node' | 'edge'; id: string } | null>(null)
   const [rf, setRf] = useState<ReactFlowInstance<ComponentNode> | null>(null)
   // Positions while a drag is in progress; committed to the draft when it ends.
@@ -481,28 +482,34 @@ export function DiagramCanvas({
           </ReactFlow>
         </LinkFileContext.Provider>
         <div className="canvas-toolbar" role="toolbar" aria-label="Canvas">
-          {PALETTE.map((p) => (
-            <span
-              key={p.id}
-              className="palette-item"
-              draggable
-              title={`Drag onto the canvas to add a ${p.name.toLowerCase()}`}
-              onDragStart={(e) => {
-                e.dataTransfer.setData(DRAG_COMPONENT, p.id)
-                e.dataTransfer.effectAllowed = 'copy'
-              }}
-            >
-              <KindIcon kind={p.kind} />
-              {p.name}
-            </span>
-          ))}
+          <PaneToggle side="left" />
           <span className="toolbar-divider" />
-          <button className="dg-btn dg-btn--ghost" onClick={autoLayout}>
-            Auto-layout
-          </button>
-          <span className="canvas-toolbar__level dg-data">
-            <span>{levelTag}</span> {Math.round(zoom * 100)}%
-          </span>
+          <div className="canvas-toolbar__scroll">
+            {PALETTE.map((p) => (
+              <span
+                key={p.id}
+                className="palette-item"
+                draggable
+                title={`Drag onto the canvas to add a ${p.name.toLowerCase()}`}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(DRAG_COMPONENT, p.id)
+                  e.dataTransfer.effectAllowed = 'copy'
+                }}
+              >
+                <KindIcon kind={p.kind} />
+                {p.name}
+              </span>
+            ))}
+            <span className="toolbar-divider" />
+            <button className="dg-btn dg-btn--ghost" onClick={autoLayout}>
+              Auto-layout
+            </button>
+            <span className="canvas-toolbar__level dg-data">
+              <span>{levelTag}</span> {Math.round(zoom * 100)}%
+            </span>
+          </div>
+          <span className="toolbar-divider" />
+          <PaneToggle side="inspector" />
         </div>
         {empty && (
           <div className="canvas-empty canvas-hint">
@@ -513,7 +520,19 @@ export function DiagramCanvas({
         )}
         {overlay}
       </div>
-      <aside className="inspector">
+      <aside className="inspector" aria-label="Inspector" hidden={!panes.inspector}>
+        <div className="inspector__head">
+          <span className="dg-label">Inspector</span>
+          <button
+            type="button"
+            className="dg-btn dg-btn--ghost pane-toggle"
+            aria-label="Hide inspector"
+            title="Hide inspector (⌘⇧\)"
+            onClick={() => panes.setInspector(false)}
+          >
+            ⟩
+          </button>
+        </div>
         {selected ? (
           <Inspector
             selected={selected}

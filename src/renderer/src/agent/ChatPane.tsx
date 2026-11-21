@@ -1,10 +1,16 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react'
 import type { DraftState, EvidenceRecord, Proposal, TurnRecord } from '../../../shared/design'
 import type { ApprovalRecord } from '../../../shared/workflow'
 import {
   DESIGN_MODELS,
-  TURN_STATUS_LABEL,
-  TURN_STATUS_TONE,
   activityTrace,
   buildTranscript,
   checkSelection,
@@ -13,13 +19,15 @@ import {
   type SelectionCheck,
   type TurnItem
 } from './chat'
+import { Picker } from './Picker'
 import type { ApprovalOutcome, DesignChat } from './useDesignChat'
 
 interface Props {
   chat: DesignChat
   /** The catalog component selected on the canvas, if any. */
   selected: { componentId: string; label: string } | null
-  onClose(): void
+  /** Hidden panes stay mounted, so the draft, thread and scroll survive a collapse. */
+  hidden?: boolean
   /** Highlights a source file in the sidebar tree and on the canvas. */
   onOpenSource?(path: string): void
 }
@@ -30,17 +38,19 @@ const OpenSource = createContext<((path: string) => void) | null>(null)
 const time = (iso: string): string =>
   new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 
+const MODEL_OPTIONS = DESIGN_MODELS.map((m) => ({ value: m, label: m }))
+
 /** The project's design conversation: threads, transcript, context, composer and proposals. */
-export function ChatPane({ chat, selected, onClose, onOpenSource }: Props): React.JSX.Element {
+export function ChatPane({ chat, selected, hidden, onOpenSource }: Props): React.JSX.Element {
   const { load, draft, project, activeId, pending } = chat
   const [text, setText] = useState('')
-  // The component the developer detached; a new canvas selection is attached by default.
+  // The component the developer removed from the message; a new canvas selection is attached.
   const [detached, setDetached] = useState<string | null>(null)
   const [modelChoice, setModelChoice] = useState<string | null>(null)
   const logRef = useRef<HTMLOListElement>(null)
-
-  const attach = !selected || detached !== selected.componentId
-  const setAttach = (on: boolean): void => setDetached(on ? null : (selected?.componentId ?? null))
+  // Follow new activity only while the reader is at the bottom; remember where they were.
+  const pinned = useRef(true)
+  const scrolled = useRef(0)
 
   const items = useMemo(
     () => (activeId ? buildTranscript(chat.events, project, activeId, chat.sent) : []),
@@ -51,73 +61,91 @@ export function ChatPane({ chat, selected, onClose, onOpenSource }: Props): Reac
     modelChoice ?? (lastModel?.kind === 'turn' ? lastModel.turn?.model : null) ?? DESIGN_MODELS[0]
 
   const selection = checkSelection(draft, selected)
-  const sendSelection: SelectionCheck = attach ? selection : { status: 'none' }
+  const attached = selection.status === 'ok' && detached !== selection.componentId
+  const sendSelection: SelectionCheck = attached ? selection : { status: 'none' }
   const pendingHere = pending && pending.threadId === activeId ? pending : null
   const live = activeId ? runningTurn(project, activeId) : null
   const ready = load.status === 'ready' && !!draft
   const canSend = ready && !pending && !!text.trim()
 
+  // A different thread opens at its latest message.
+  useEffect(() => {
+    pinned.current = true
+  }, [activeId])
+
+  // Reopening the pane puts the transcript back where it was left.
+  useLayoutEffect(() => {
+    const log = logRef.current
+    if (hidden || !log) return
+    log.scrollTop = pinned.current ? log.scrollHeight : scrolled.current
+  }, [hidden])
+
   useEffect(() => {
     const log = logRef.current
-    if (log) log.scrollTop = log.scrollHeight
-  }, [items.length, pendingHere, live?.toolCalls.length])
+    if (hidden || !log || !pinned.current) return
+    log.scrollTop = log.scrollHeight
+  }, [hidden, activeId, items.length, pendingHere, live?.toolCalls.length])
+
+  const onScroll = (): void => {
+    const log = logRef.current
+    if (hidden || !log) return
+    scrolled.current = log.scrollTop
+    pinned.current = log.scrollHeight - log.scrollTop - log.clientHeight < 32
+  }
 
   const send = async (): Promise<void> => {
     if (!canSend) return
+    pinned.current = true
     const ok = await chat.send(text, model, sendSelection)
     if (ok) setText('')
   }
 
   return (
     <OpenSource.Provider value={onOpenSource ?? null}>
-      <aside className="chat" aria-label="Design chat">
-        <header className="chat__head">
-          <span className="dg-label">Design chat</span>
-          <span className="dg-data chat__ref" title={draft ? draft.commitSha : undefined}>
-            {draft ? `DRAFT r${draft.revision} · ${draft.commitSha.slice(0, 7)}` : ''}
-          </span>
-          <button className="link-x" onClick={onClose} aria-label="Close design chat">
-            ✕
-          </button>
-        </header>
-
+      <section
+        className="chat"
+        id="panel-chat"
+        role="tabpanel"
+        aria-labelledby="tab-chat"
+        hidden={hidden}
+      >
         {load.status === 'ready' && (
           <div className="chat__threads">
-            <select
-              className="dg-input"
-              aria-label="Design thread"
-              value={activeId ?? ''}
-              onChange={(e) => chat.openThread(e.target.value)}
+            <Picker
+              className="chat__thread-picker"
+              label="Design thread"
+              placeholder="New conversation"
+              value={activeId}
               disabled={!chat.threads.length}
+              options={chat.threads.map((t) => ({
+                value: t.id,
+                label: t.title,
+                hint: chat.pending?.threadId === t.id ? 'working' : undefined
+              }))}
+              onChange={chat.openThread}
+            />
+            <button
+              type="button"
+              className="dg-btn dg-btn--ghost chat__icon-btn"
+              onClick={() => void chat.newThread()}
+              disabled={!!pending}
+              aria-label="New thread"
+              title={pending ? 'Wait for the running turn to finish' : 'New thread'}
             >
-              {!chat.threads.length && <option value="">No threads yet</option>}
-              {chat.threads.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.title}
-                </option>
-              ))}
-            </select>
-            <button className="dg-btn" onClick={() => void chat.newThread()} disabled={!!pending}>
-              New thread
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
             </button>
           </div>
         )}
 
         <LoadState chat={chat} />
 
-        <ol className="chat__log" ref={logRef} aria-live="polite">
-          {ready && !items.length && !pendingHere && (
-            <li className="chat__empty dg-data">
-              {activeId
-                ? 'No messages in this thread yet.'
-                : 'Ask about the architecture or describe a change. Sending starts a thread.'}
-            </li>
-          )}
+        <ol className="chat__log" ref={logRef} onScroll={onScroll} aria-live="polite">
           {items.map((item) =>
             item.kind === 'note' ? (
-              <li key={item.key} className="chat__note dg-data">
-                <span className="dg-label">Workflow · {time(item.at)}</span>
-                <p>{item.text}</p>
+              <li key={item.key} className="chat__note" title={time(item.at)}>
+                {item.text}
               </li>
             ) : pendingHere && item.turn?.status === 'running' ? null : (
               <Turn key={item.key} item={item} chat={chat} draft={draft} />
@@ -125,17 +153,12 @@ export function ChatPane({ chat, selected, onClose, onOpenSource }: Props): Reac
           )}
           {pendingHere && (
             <li className="chat__turn">
-              <Message who="You" text={pendingHere.text} />
-              <ContextChip selection={pendingHere.selection} />
-              <div className="chat__reply">
-                <div className="chat__meta">
-                  <span className="dg-label">Gemini · {pendingHere.model}</span>
-                  <span className="dg-pill" data-tone="info" role="status">
-                    {live ? 'Running' : 'Sending'}
-                  </span>
-                </div>
+              <UserMessage
+                text={pendingHere.text}
+                context={pendingHere.selection.status === 'ok' ? pendingHere.selection.name : null}
+              />
+              <div className="chat__assistant">
                 <Activity turn={live} live />
-                <p className="dg-data">The reply appears when the turn finishes.</p>
               </div>
             </li>
           )}
@@ -144,10 +167,9 @@ export function ChatPane({ chat, selected, onClose, onOpenSource }: Props): Reac
         {chat.error && (
           <div className="dg-reject chat__error" role="alert">
             <div className="dg-reject__body">
-              <span className="dg-reject__code">Error</span>
               <span className="dg-reject__msg">{chat.error}</span>
             </div>
-            <button className="link-x" onClick={chat.dismissError}>
+            <button type="button" className="link-x" onClick={chat.dismissError}>
               Dismiss
             </button>
           </div>
@@ -155,43 +177,45 @@ export function ChatPane({ chat, selected, onClose, onOpenSource }: Props): Reac
 
         <form
           className="chat__composer"
+          aria-label="Message Gemini"
           onSubmit={(e) => {
             e.preventDefault()
             void send()
           }}
         >
-          <div className="chat__context">
-            <SelectionControl
-              selection={selection}
-              attached={attach}
-              onAttach={setAttach}
-              draft={draft}
-            />
-            <select
-              className="dg-input chat__model"
-              aria-label="Model for the next turn"
-              title="Model for the next turn"
-              value={model}
-              onChange={(e) => setModelChoice(e.target.value)}
-            >
-              {DESIGN_MODELS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="prompt">
-            <label htmlFor="design-chat" className="prompt__caret">
-              &gt;
-            </label>
+          <div className="chat__field" data-disabled={ready ? undefined : ''}>
+            {selection.status === 'ok' && (
+              <div className="chat__context">
+                {attached ? (
+                  <span className="chat__attach" title={selection.componentId}>
+                    <span className="chat__attach-name">{selection.name}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${selection.name} from this message`}
+                      title="Remove from this message"
+                      onClick={() => setDetached(selection.componentId)}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="chat__attach chat__attach--off"
+                    title={`Attach ${selection.name} to this message`}
+                    onClick={() => setDetached(null)}
+                  >
+                    + {selection.name}
+                  </button>
+                )}
+              </div>
+            )}
             <textarea
               id="design-chat"
-              className="dg-input"
+              className="chat__input"
+              aria-label="Message"
               rows={2}
-              placeholder={
-                ready ? 'Ask or describe a change to the graph' : 'Design chat unavailable'
-              }
+              placeholder={ready ? 'Ask or describe a change…' : 'Design chat unavailable'}
               value={text}
               disabled={!ready}
               onChange={(e) => setText(e.target.value)}
@@ -202,27 +226,41 @@ export function ChatPane({ chat, selected, onClose, onOpenSource }: Props): Reac
                 }
               }}
             />
-          </div>
-          <div className="chat__actions">
-            {pending ? (
-              <button
-                type="button"
-                className="dg-btn dg-btn--ghost"
-                onClick={chat.cancel}
-                disabled={!live}
-                title={live ? 'Stop this turn' : 'The turn has not started yet'}
-              >
-                Stop
-              </button>
-            ) : (
-              <span />
-            )}
-            <button type="submit" className="dg-btn dg-btn--primary" disabled={!canSend}>
-              Send <span className="dg-kbd">⌘↵</span>
-            </button>
+            <div className="chat__bar">
+              <Picker
+                className="chat__model"
+                label="Model for the next turn"
+                heading="Model for the next turn"
+                value={model}
+                options={MODEL_OPTIONS}
+                onChange={setModelChoice}
+                up
+              />
+              {pending ? (
+                <button
+                  type="button"
+                  className="dg-btn dg-btn--danger chat__send"
+                  onClick={chat.cancel}
+                  disabled={!live}
+                  title={live ? 'Stop the running turn' : 'Starting the turn…'}
+                >
+                  <span className="chat__stop" aria-hidden="true" />
+                  Stop
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  className="dg-btn dg-btn--primary chat__send"
+                  disabled={!canSend}
+                  title="Send (⌘↵)"
+                >
+                  Send <span className="dg-kbd">⌘↵</span>
+                </button>
+              )}
+            </div>
           </div>
         </form>
-      </aside>
+      </section>
     </OpenSource.Provider>
   )
 }
@@ -232,13 +270,13 @@ function LoadState({ chat }: { chat: DesignChat }): React.JSX.Element | null {
   if (load.status === 'ready' || load.status === 'off') return null
   if (load.status === 'loading')
     return (
-      <p className="chat__state dg-data" role="status">
+      <p className="chat__state" role="status">
         Opening the design draft…
       </p>
     )
   if (load.status === 'waiting')
     return (
-      <p className="chat__state dg-data" role="status">
+      <p className="chat__state" role="status">
         {load.message}
       </p>
     )
@@ -255,28 +293,33 @@ function LoadState({ chat }: { chat: DesignChat }): React.JSX.Element | null {
   )
 }
 
-function Message({
-  who,
+function UserMessage({
   text,
-  at
+  context,
+  title
 }: {
-  who: string
   text: string | null
-  at?: string
+  /** The component sent with the message, if any. */
+  context: string | null
+  title?: string
 }): React.JSX.Element {
   return (
-    <div className="chat__msg">
-      <span className="dg-label">
-        {who}
-        {at && ` · ${time(at)}`}
-      </span>
+    <div className="chat__user" title={title}>
+      {context && <span className="chat__user-context">{context}</span>}
       {text !== null ? (
         <p>{text}</p>
       ) : (
-        <p className="dg-data">Message not recorded in this thread.</p>
+        <p className="chat__muted">Message not recorded in this thread.</p>
       )}
     </div>
   )
+}
+
+/** Only outcomes that need attention get a line; a finished turn speaks for itself. */
+const STATUS_NOTE: Partial<Record<TurnRecord['status'], string>> = {
+  cancelled: 'Stopped.',
+  interrupted: 'The app closed while this turn ran. The draft was not changed.',
+  'stale-graph': 'The draft changed before this ran. Send it again.'
 }
 
 function Turn({
@@ -291,25 +334,31 @@ function Turn({
   const { turn } = item
   // The thread's assistant event repeats the error when there was no reply; show it once.
   const reply = turn?.reply ?? (turn?.error ? null : item.reply)
+  const context =
+    turn?.selection.status === 'resolved'
+      ? turn.selection.name
+      : turn?.selection.status === 'missing'
+        ? turn.selection.componentId
+        : null
+  const note = turn && STATUS_NOTE[turn.status]
   return (
     <li className="chat__turn">
-      <Message who="You" text={item.text} at={item.at} />
-      {turn && <TurnSelection turn={turn} />}
-      <div className="chat__reply">
-        <div className="chat__meta">
-          <span className="dg-label">Gemini{turn ? ` · ${turn.model}` : ''}</span>
-          {turn && (
-            <span className="dg-pill" data-tone={TURN_STATUS_TONE[turn.status]}>
-              {TURN_STATUS_LABEL[turn.status]}
-            </span>
-          )}
-        </div>
+      <UserMessage
+        text={item.text}
+        context={context}
+        title={`${time(item.at)}${turn ? ` · ${turn.model}` : ''}`}
+      />
+      <div className="chat__assistant">
         {turn && <Activity turn={turn} />}
-        {reply && <p>{reply}</p>}
-        {turn?.error && <p className="error">{turn.error}</p>}
-        {turn?.status === 'interrupted' && (
-          <p className="dg-data">
-            The app stopped while this turn ran. The draft was not changed by it.
+        {reply && <p className="chat__reply">{reply}</p>}
+        {turn?.error && (
+          <p className="chat__status" data-tone="danger">
+            {turn.error}
+          </p>
+        )}
+        {note && !turn?.error && (
+          <p className="chat__status" data-tone="warn">
+            {note}
           </p>
         )}
         {item.proposal && <ProposalCard proposal={item.proposal} chat={chat} draft={draft} />}
@@ -318,77 +367,9 @@ function Turn({
   )
 }
 
-/** What the backend made of the selection the turn carried. */
-function TurnSelection({ turn }: { turn: TurnRecord }): React.JSX.Element | null {
-  const s = turn.selection
-  if (s.status === 'none') return null
-  if (s.status === 'resolved')
-    return (
-      <span className="chat__chip dg-data" data-tone="accent">
-        @{s.name} · {s.kind}
-      </span>
-    )
-  return (
-    <span className="chat__chip dg-data" data-tone="warn">
-      @{s.componentId} not found: {s.message}
-    </span>
-  )
-}
-
-function ContextChip({ selection }: { selection: SelectionCheck }): React.JSX.Element | null {
-  if (selection.status !== 'ok') return null
-  return (
-    <span className="chat__chip dg-data" data-tone="accent">
-      @{selection.name} · {selection.kind}
-    </span>
-  )
-}
-
-function SelectionControl({
-  selection,
-  attached,
-  onAttach,
-  draft
-}: {
-  selection: SelectionCheck
-  attached: boolean
-  onAttach(attached: boolean): void
-  draft: DraftState | null
-}): React.JSX.Element {
-  if (selection.status === 'none')
-    return (
-      <span className="dg-data chat__hint">
-        Select a component on the canvas to add it as context
-      </span>
-    )
-  if (selection.status === 'missing')
-    return (
-      <span className="chat__chip dg-data" data-tone="warn" title={selection.componentId}>
-        @{selection.label} isn&apos;t in draft r{draft?.revision ?? '?'}; not sent
-      </span>
-    )
-  return attached ? (
-    <span className="chat__chip dg-data" data-tone="accent" title={selection.componentId}>
-      @{selection.name}
-      <button
-        type="button"
-        className="link-x"
-        aria-label={`Don't send ${selection.name} as context`}
-        onClick={() => onAttach(false)}
-      >
-        ✕
-      </button>
-    </span>
-  ) : (
-    <button type="button" className="link-x" onClick={() => onAttach(true)}>
-      + Attach @{selection.name}
-    </button>
-  )
-}
-
 /**
- * The turn's recorded tool calls and the source it read, in order. While the turn runs it is
- * expanded and polled; afterwards it collapses to a one-line summary that can be reopened.
+ * The turn's recorded tool calls and the code it read, folded into one quiet line. While the
+ * turn runs, the line shows the newest step; expanding it lists every step and source.
  */
 function Activity({
   turn,
@@ -400,77 +381,63 @@ function Activity({
 }): React.JSX.Element | null {
   const trace = activityTrace(turn)
   const working = live || trace.phase === 'working'
-  if (!working && !trace.steps.length && !trace.evidence.length) return null
-  const tone = working ? 'info' : trace.phase === 'stopped' ? 'danger' : undefined
+  const hasDetail = trace.steps.length > 0 || trace.evidence.length > 0
+  if (!working && !hasDetail) return null
   return (
-    <details className="chat__activity" open={working || undefined} data-phase={trace.phase}>
-      <summary className="dg-data" data-tone={tone} role={working ? 'status' : undefined}>
-        {trace.headline}
+    <details className="chat__activity" data-phase={working ? 'working' : trace.phase}>
+      <summary role={working ? 'status' : undefined} data-empty={hasDetail ? undefined : ''}>
+        {working && <span className="chat__pulse" aria-hidden="true" />}
+        <span className="chat__activity-head">{trace.headline}</span>
       </summary>
-      {trace.steps.length > 0 && (
-        <ol className="chat__trace">
-          {trace.steps.map((step) => (
-            <li key={step.key} data-ok={step.ok} title={`${step.tool} ${step.args}`}>
-              <span className="chat__tool dg-label">{step.label}</span>
-              <span className="dg-data" data-tone={step.ok ? undefined : 'danger'}>
-                {step.summary}
-              </span>
-            </li>
-          ))}
-        </ol>
+      {hasDetail && (
+        <div className="chat__activity-body">
+          {trace.steps.length > 0 && (
+            <ol className="chat__trace">
+              {trace.steps.map((step) => (
+                <li key={step.key} data-ok={step.ok} title={`${step.tool} ${step.args}`}>
+                  <span className="chat__tool">{step.label}</span>
+                  <span>{step.summary}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+          {trace.evidence.length > 0 && <Sources evidence={trace.evidence} />}
+        </div>
       )}
-      {working && (
-        <p className="chat__waiting dg-data">
-          {trace.steps.length ? 'Waiting for the next step…' : 'Waiting for the first tool call…'}
-        </p>
-      )}
-      {trace.evidence.length > 0 && <Evidence evidence={trace.evidence} />}
     </details>
   )
 }
 
-/** Evidence lines are 0-based, end-exclusive; the design system shows 1-based `start–end`. */
-function Evidence({ evidence }: { evidence: EvidenceRecord[] }): React.JSX.Element {
+/** Evidence lines are 0-based, end-exclusive; shown 1-based as `start–end`. */
+function Sources({ evidence }: { evidence: EvidenceRecord[] }): React.JSX.Element {
   const open = useContext(OpenSource)
   return (
-    <div className="dg-evidence-list">
-      <div className="dg-evidence-list__head">
-        <span>{evidence.length} sources</span>
-      </div>
-      {evidence.map((e) => (
-        <div
-          key={e.id}
-          className="dg-evidence-list__row"
-          title={`${e.path} @ ${e.commitSha.slice(0, 7)}`}
-        >
-          <span className="dg-evidence-list__kind">CODE</span>
-          {open ? (
-            <button
-              type="button"
-              className="dg-evidence__path chat__source"
-              onClick={() => open(e.path)}
-              title={`Show ${e.path} in the file tree`}
-            >
-              {e.path}
-            </button>
-          ) : (
-            <span className="dg-evidence__path">{e.path}</span>
-          )}
-          <span className="dg-evidence-list__range">
-            {e.startLine + 1}–{Math.max(e.startLine + 1, e.endLine)}
-          </span>
-        </div>
-      ))}
-    </div>
+    <ul className="chat__sources">
+      {evidence.map((e) => {
+        const range = `${e.startLine + 1}–${Math.max(e.startLine + 1, e.endLine)}`
+        return (
+          <li key={e.id} title={`${e.path}:${range} @ ${e.commitSha.slice(0, 7)}`}>
+            {open ? (
+              <button type="button" className="chat__source" onClick={() => open(e.path)}>
+                {e.path}
+              </button>
+            ) : (
+              <span className="chat__source">{e.path}</span>
+            )}
+            <span className="chat__range">{range}</span>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
-const CHANGE_CODE = { added: 'ADD', updated: 'UPD', removed: 'DEL' } as const
-const PROPOSAL_TONE = {
-  pending: 'accent',
-  approved: 'ok',
-  rejected: 'info',
-  stale: 'warn'
+const CHANGE_MARK = { added: '+', updated: '~', removed: '−' } as const
+const PROPOSAL_STATUS = {
+  pending: null,
+  approved: { label: 'Approved', tone: 'ok' },
+  rejected: { label: 'Discarded', tone: 'info' },
+  stale: { label: 'Stale', tone: 'warn' }
 } as const
 
 function ProposalCard({
@@ -486,64 +453,81 @@ function ProposalCard({
   const behind = proposalIsBehind(proposal, draft)
   const busy = chat.deciding === proposal.id || !!chat.pending
   const outcome = chat.approvals[proposal.id]
+  const status = PROPOSAL_STATUS[proposal.status]
   return (
     <section
       className="chat-proposal"
       data-status={proposal.status}
       aria-label="Proposed graph change"
     >
-      <div className="chat__meta">
-        <span className="dg-label">
-          Proposal · r{preview.baseRevision} → r{preview.resultRevision}
+      <header className="chat-proposal__head">
+        <span className="chat-proposal__title">Proposed change</span>
+        <span className="chat-proposal__rev">
+          r{preview.baseRevision} → r{preview.resultRevision}
         </span>
-        <span className="dg-pill" data-tone={PROPOSAL_TONE[proposal.status]}>
-          {proposal.status}
-        </span>
-      </div>
+        {status && (
+          <span className="chat-proposal__status" data-tone={status.tone}>
+            {status.label}
+          </span>
+        )}
+      </header>
       <p>{proposal.summary}</p>
       {(preview.components.length > 0 || preview.connections.length > 0) && (
         <ul className="chat-proposal__changes">
           {preview.components.map((c) => (
-            <li key={`n-${c.id}`} className="dg-data" title={c.id}>
-              <span className="chat-proposal__code" data-change={c.change}>
-                {CHANGE_CODE[c.change]}
-              </span>
+            <li key={`n-${c.id}`} title={c.id} data-change={c.change}>
+              <span className="chat-proposal__mark">{CHANGE_MARK[c.change]}</span>
               {c.name}
             </li>
           ))}
           {preview.connections.map((c) => (
-            <li key={`e-${c.id}`} className="dg-data" title={c.id}>
-              <span className="chat-proposal__code" data-change={c.change}>
-                {CHANGE_CODE[c.change]}
-              </span>
-              {c.kind} · {c.from} → {c.to}
+            <li key={`e-${c.id}`} title={c.id} data-change={c.change}>
+              <span className="chat-proposal__mark">{CHANGE_MARK[c.change]}</span>
+              {c.from} → {c.to}
+              <span className="chat__muted"> · {c.kind}</span>
             </li>
           ))}
         </ul>
       )}
-      {proposal.evidence.length > 0 && <Evidence evidence={proposal.evidence} />}
+      {proposal.evidence.length > 0 && (
+        <details className="chat__activity">
+          <summary>
+            <span className="chat__activity-head">
+              Based on {proposal.evidence.length} source
+              {proposal.evidence.length === 1 ? '' : 's'}
+            </span>
+          </summary>
+          <div className="chat__activity-body">
+            <Sources evidence={proposal.evidence} />
+          </div>
+        </details>
+      )}
       {behind && (
-        <p className="chat__chip dg-data" data-tone="warn">
-          Checked against r{preview.baseRevision}; the draft is now r{draft!.revision}. Approval
-          will be refused as stale. Ask for the change again against the current draft.
+        <p className="chat__status" data-tone="warn">
+          Checked against r{preview.baseRevision}; the draft is now r{draft!.revision}, so approval
+          will be refused. Ask again against the current draft.
         </p>
       )}
       {proposal.reason && proposal.status !== 'pending' && (
-        <p className="dg-data">{proposal.reason}</p>
+        <p className="chat__muted">{proposal.reason}</p>
       )}
       <ApprovalState proposal={proposal} outcome={outcome} frozen={chat.frozen} />
       {proposal.status === 'pending' && (
         <div className="chat__actions">
           <button
-            className="dg-btn dg-btn--ghost"
+            type="button"
+            className="dg-btn"
             disabled={busy}
+            title="Discard; the draft stays as it is"
             onClick={() => void chat.discard(proposal)}
           >
             Discard
           </button>
           <button
+            type="button"
             className="dg-btn dg-btn--primary"
             disabled={busy}
+            title={`Apply to the draft as r${preview.resultRevision}`}
             onClick={() => void chat.approve(proposal)}
           >
             {chat.deciding === proposal.id ? 'Approving…' : 'Approve'}
@@ -580,13 +564,13 @@ function ApprovalState({
   const record = frozen.find((a) => a.correlation.proposalId === proposal.id)
   if (outcome?.kind === 'draft-only' && !record)
     return (
-      <p className="chat__chip dg-data" data-tone="warn">
+      <p className="chat__status" data-tone="warn">
         Applied to draft r{outcome.revision}. No coding handoff was frozen: {outcome.message}
       </p>
     )
   const id = record?.approvalId ?? (outcome?.kind === 'frozen' ? outcome.approvalId : null)
   return (
-    <p className="chat__chip dg-data" data-tone="ok">
+    <p className="chat__status" data-tone="ok">
       Applied to the draft
       {id ? ` · frozen for coding as ${id.slice(0, 12)}` : ' · no coding handoff recorded'}
     </p>

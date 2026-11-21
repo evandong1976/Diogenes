@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { PaneToggle } from './canvas/PaneToggle'
 import type {
   CatalogGraph,
   CatalogKind,
@@ -185,6 +186,7 @@ export function RepositoryCatalog({
   return (
     <main className="dg-canvas repository-catalog">
       <div className="row catalog-toolbar">
+        <PaneToggle side="left" />
         <div>
           <h1 className="title">Repository catalog</h1>
           <p className="dg-data" role="status">

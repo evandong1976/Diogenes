@@ -12,6 +12,8 @@ import { ArchitectureLevel } from './canvas/ArchitectureLevel'
 import { indexLabel } from './canvas/indexStatus'
 import { RepositoryCatalog } from './RepositoryCatalog'
 import { Sidebar } from './Sidebar'
+import { PaneResizer } from './PaneResizer'
+import { savedChatWidth } from './chatWidth'
 import {
   LEVELS,
   WorkspaceContext,
@@ -21,7 +23,7 @@ import {
 } from './canvas/components'
 import { catalogKindsByLevel } from './canvas/diagrams'
 import { ChatPane } from './agent/ChatPane'
-import { useDesignChat, type DesignChat } from './agent/useDesignChat'
+import { useDesignChat } from './agent/useDesignChat'
 
 function App(): React.JSX.Element {
   const [user, setUser] = useState<GithubUser | null | undefined>(undefined)
@@ -48,7 +50,24 @@ function App(): React.JSX.Element {
   const [focusFile, setFocusFile] = useState<string | null>(null)
   // The catalog component selected on the canvas, offered to the design chat as context.
   const [selected, setSelected] = useState<ComponentSelection | null>(null)
-  const [chatOpen, setChatOpen] = useState(true)
+  // Side panes collapse independently; the chat stays mounted while hidden so nothing resets.
+  const [leftOpen, setLeftOpen] = useState(true)
+  const [leftTab, setLeftTab] = useState<'chat' | 'project'>('chat')
+  const [inspectorOpen, setInspectorOpen] = useState(true)
+  const [chatWidth, setChatWidth] = useState(savedChatWidth)
+  const [resizing, setResizing] = useState(false)
+
+  // ⌘\ toggles the left pane, ⌘⇧\ the inspector (matching the toolbar tooltips).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!(e.metaKey || e.ctrlKey) || e.code !== 'Backslash') return
+      e.preventDefault()
+      if (e.shiftKey) setInspectorOpen((o) => !o)
+      else setLeftOpen((o) => !o)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const pickRepo = (next: GithubRepo): void => {
     window.api.gemini.useFixture()
@@ -146,6 +165,8 @@ function App(): React.JSX.Element {
   // Example mode has no repo: only the Code logic level, on the bundled fixture.
   const shownRepo = exampleOpen ? null : repo
   const catalog = shownRepo ? (indexed?.catalog ?? null) : null
+  // Example mode has no backend project, so its left pane is Project only.
+  const tab = shownRepo ? leftTab : 'project'
 
   return (
     <WorkspaceContext.Provider
@@ -155,31 +176,103 @@ function App(): React.JSX.Element {
         setDraft: (update) =>
           setDrafts((all) => ({ ...all, [level]: update(all[level] ?? emptyDraft) })),
         focusFile,
-        onSelectComponent: setSelected
+        onSelectComponent: setSelected,
+        panes: {
+          left: leftOpen,
+          inspector: inspectorOpen,
+          leftTab: tab,
+          setLeft: setLeftOpen,
+          setInspector: setInspectorOpen
+        }
       }}
     >
-      <div className="app" data-chat={shownRepo && chatOpen ? '' : undefined}>
-        <Workspace
-          shownRepo={shownRepo}
-          catalog={catalog}
-          drafts={drafts}
-          level={level}
-          setLevel={setLevel}
-          view={view}
-          setView={setView}
-          indexed={shownRepo ? indexed : null}
-          indexStatus={indexStatus}
-          focusFile={focusFile}
-          setFocusFile={setFocusFile}
-          onPickRepo={pickRepo}
-          chat={shownRepo ? chat : null}
-          chatOpen={chatOpen}
-          onChatOpen={setChatOpen}
-          onConnectRepo={() => {
-            if (exampleOpen) setExampleOpen(false)
-            else setRepo(null)
-          }}
-        />
+      <div
+        className="app"
+        data-left={leftOpen ? tab : 'closed'}
+        data-resizing={resizing ? '' : undefined}
+      >
+        <div
+          className="leftpane"
+          hidden={!leftOpen}
+          style={{ '--dg-chat-w': `${chatWidth}px` } as React.CSSProperties}
+        >
+          {tab === 'chat' && (
+            <PaneResizer width={chatWidth} onWidth={setChatWidth} onDragging={setResizing} />
+          )}
+          <div className="leftpane__tabs" role="tablist" aria-label="Left pane">
+            <button
+              role="tab"
+              id="tab-chat"
+              className="leftpane__tab dg-label"
+              aria-selected={tab === 'chat'}
+              aria-controls="panel-chat"
+              disabled={!shownRepo}
+              title={shownRepo ? 'Design chat' : 'Design chat needs a GitHub repo'}
+              onClick={() => setLeftTab('chat')}
+            >
+              Chat
+              {chat.pending && (
+                <span className="leftpane__busy" aria-label="agent working">
+                  ●
+                </span>
+              )}
+            </button>
+            <button
+              role="tab"
+              id="tab-project"
+              className="leftpane__tab dg-label"
+              aria-selected={tab === 'project'}
+              aria-controls="panel-project"
+              title="Repository, levels and files"
+              onClick={() => setLeftTab('project')}
+            >
+              Project
+            </button>
+            <button
+              type="button"
+              className="dg-btn dg-btn--ghost pane-toggle leftpane__hide"
+              aria-label={`Hide ${tab === 'chat' ? 'design chat' : 'project'}`}
+              title={`Hide ${tab === 'chat' ? 'design chat' : 'project'} (⌘\\)`}
+              onClick={() => setLeftOpen(false)}
+            >
+              ⟨
+            </button>
+          </div>
+          <div
+            className="leftpane__panel"
+            role="tabpanel"
+            id="panel-project"
+            aria-labelledby="tab-project"
+            hidden={tab !== 'project'}
+          >
+            <Workspace
+              shownRepo={shownRepo}
+              catalog={catalog}
+              drafts={drafts}
+              level={level}
+              setLevel={setLevel}
+              view={view}
+              setView={setView}
+              indexed={shownRepo ? indexed : null}
+              indexStatus={indexStatus}
+              focusFile={focusFile}
+              setFocusFile={setFocusFile}
+              onPickRepo={pickRepo}
+              onConnectRepo={() => {
+                if (exampleOpen) setExampleOpen(false)
+                else setRepo(null)
+              }}
+            />
+          </div>
+          {shownRepo && (
+            <ChatPane
+              chat={chat}
+              selected={selected}
+              hidden={!leftOpen || tab !== 'chat'}
+              onOpenSource={setFocusFile}
+            />
+          )}
+        </div>
         {shownRepo && view === 'catalog' ? (
           <RepositoryCatalog key={shownRepo.id} repoId={shownRepo.id} level={level} />
         ) : (
@@ -204,14 +297,6 @@ function App(): React.JSX.Element {
               />
             )}
           </main>
-        )}
-        {shownRepo && chatOpen && (
-          <ChatPane
-            chat={chat}
-            selected={selected}
-            onClose={() => setChatOpen(false)}
-            onOpenSource={setFocusFile}
-          />
         )}
         <footer className="statusbar dg-data">
           <span>
@@ -239,10 +324,7 @@ function Workspace({
   focusFile,
   setFocusFile,
   onPickRepo,
-  onConnectRepo,
-  chat,
-  chatOpen,
-  onChatOpen
+  onConnectRepo
 }: {
   shownRepo: GithubRepo | null
   catalog: SoftwareGraph['catalog'] | null
@@ -257,9 +339,6 @@ function Workspace({
   setFocusFile(path: string | null): void
   onPickRepo(repo: GithubRepo): void
   onConnectRepo(): void
-  chat: DesignChat | null
-  chatOpen: boolean
-  onChatOpen(open: boolean): void
 }): React.JSX.Element {
   const levelCounts = useMemo(() => {
     if (!catalog) return [null, null, null]
@@ -298,9 +377,6 @@ function Workspace({
       fileCounts={fileCounts}
       focusFile={focusFile}
       onFocusFile={setFocusFile}
-      chat={chat}
-      chatOpen={chatOpen}
-      onChatOpen={onChatOpen}
     />
   )
 }
