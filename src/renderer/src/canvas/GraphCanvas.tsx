@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import {
-  Background,
   Controls,
   Handle,
   MarkerType,
@@ -25,26 +24,38 @@ interface Item {
   sources: SourceReference[]
 }
 
-type StateNodeData = { label: string; initial: boolean; change: Change }
+type StateNodeData = {
+  id: string
+  label: string
+  initial: boolean
+  change: Change
+  sourceCount: number
+}
 type StateNode = Node<StateNodeData, 'state'>
 
+// Design system: proposed changes are marigold, removals are poppy, everything else is a connector.
 const COLORS: Record<Change, string> = {
-  unchanged: 'var(--ev-c-gray-1)',
-  added: '#3fb950',
-  removed: '#f85149'
+  unchanged: 'var(--dg-connector)',
+  added: 'var(--dg-accent)',
+  removed: 'var(--dg-danger)'
 }
 
 function StateNodeView({ data, selected }: NodeProps<StateNode>): React.JSX.Element {
   return (
     <div
-      className="state-node"
-      data-change={data.change}
-      data-selected={selected || undefined}
-      style={{ borderColor: COLORS[data.change] }}
+      className="dg-node state-node"
+      data-selected={selected ? 'true' : undefined}
+      data-proposed={data.change === 'added' ? 'true' : undefined}
     >
       <Handle type="target" position={Position.Left} />
-      {data.initial && <span className="state-node-tag">start</span>}
-      {data.label}
+      <div className="state-node-header dg-label">
+        <span>State · {data.id}</span>
+        {data.initial && <span className="dg-pill">Start</span>}
+      </div>
+      <div className="state-node-name">{data.label}</div>
+      <div className="dg-data">
+        {data.sourceCount ? `${data.sourceCount} source refs` : 'Not in code yet'}
+      </div>
       <Handle type="source" position={Position.Right} />
     </div>
   )
@@ -121,9 +132,11 @@ export function GraphCanvas({ graph, preview }: Props): React.JSX.Element {
       type: 'state',
       position: positions.get(s.id)!,
       data: {
+        id: s.id,
         label: s.label,
         initial: s.id === graph.initialStateId,
-        change: items.get(`state:${s.id}`)!.change
+        change: items.get(`state:${s.id}`)!.change,
+        sourceCount: items.get(`state:${s.id}`)!.sources.length
       }
     }))
 
@@ -135,15 +148,16 @@ export function GraphCanvas({ graph, preview }: Props): React.JSX.Element {
         source: t.from,
         target: t.to,
         label: truncate(t.trigger),
-        animated: change === 'added',
         style: {
           stroke: color,
-          strokeWidth: change === 'unchanged' ? 1.5 : 2,
-          strokeDasharray: change === 'removed' ? '6 4' : undefined
+          strokeWidth: 1,
+          strokeDasharray: change === 'unchanged' ? undefined : '4 3'
         },
-        markerEnd: { type: MarkerType.ArrowClosed, color },
-        labelStyle: { fill: 'var(--ev-c-text-2)', fontSize: 11 },
-        labelBgStyle: { fill: 'var(--color-background)' }
+        markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
+        labelStyle: { fill: 'var(--dg-text-2)', font: '400 10px var(--dg-font-bit)' },
+        labelBgStyle: { fill: 'var(--dg-surface-2)', stroke: 'var(--dg-border-strong)' },
+        labelBgPadding: [4, 2] as [number, number],
+        labelBgBorderRadius: 2
       }
     })
 
@@ -154,7 +168,7 @@ export function GraphCanvas({ graph, preview }: Props): React.JSX.Element {
 
   return (
     <div className="canvas-layout">
-      <div className="canvas">
+      <div className="canvas dg-canvas">
         <ReactFlow
           key={preview ? 'preview' : 'current'}
           nodes={nodes}
@@ -168,41 +182,38 @@ export function GraphCanvas({ graph, preview }: Props): React.JSX.Element {
           onPaneClick={() => setSelectedKey(null)}
           proOptions={{ hideAttribution: true }}
         >
-          <Background />
           <Controls showInteractive={false} />
         </ReactFlow>
       </div>
       <aside className="inspector">
         {selected ? (
           <>
-            <p className="muted inspector-kind">
-              {selected.kind}
+            <div className="row">
+              <span className="dg-label">{selected.kind}</span>
               {selected.change !== 'unchanged' && (
-                <span className="badge" style={{ borderColor: COLORS[selected.change] }}>
-                  {selected.change}
+                <span className="dg-pill" style={{ color: COLORS[selected.change] }}>
+                  {selected.change === 'added' ? 'Proposed' : 'Replaced'}
                 </span>
               )}
-            </p>
-            <h3>{selected.title}</h3>
-            {selected.detail && <p>{selected.detail}</p>}
-            <h4>Source</h4>
+            </div>
+            <h2 className="title">{selected.title}</h2>
+            {selected.detail && <p className="muted">{selected.detail}</p>}
+            <span className="dg-label">Source</span>
             {selected.sources.length ? (
-              <ul className="sources">
+              <ul className="sources dg-data">
                 {selected.sources.map((s) => (
                   <li key={`${s.path}:${s.startLine}-${s.endLine}`}>
-                    <code>
-                      {s.path}:{s.startLine}
-                      {s.endLine !== s.startLine && `–${s.endLine}`}
-                    </code>
+                    {s.path}:{s.startLine}
+                    {s.endLine !== s.startLine && `–${s.endLine}`}
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="muted">Not in the code yet.</p>
+              <p className="dg-data">Not in the code yet</p>
             )}
           </>
         ) : (
-          <p className="muted">Click a state or transition to inspect it.</p>
+          <span className="dg-label">Select a state or transition</span>
         )}
       </aside>
     </div>

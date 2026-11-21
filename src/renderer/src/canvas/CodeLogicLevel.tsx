@@ -31,21 +31,25 @@ export function CodeLogicLevel(): React.JSX.Element {
   return (
     <div className="level">
       <div className="toolbar row">
-        <span className="muted">
-          Background job · {source === 'example' ? 'saved example' : 'built by Gemini'}
+        <span className="dg-label">
+          Background job · {source === 'example' ? 'Saved example' : 'Built by Gemini'}
         </span>
-        <div className="row" style={{ gap: 8 }}>
+        <div className="row">
           {source === 'example' && (
-            <button aria-pressed={showPreview} onClick={() => setShowPreview((v) => !v)}>
+            <button
+              className={showPreview ? 'dg-btn dg-btn--primary' : 'dg-btn'}
+              aria-pressed={showPreview}
+              onClick={() => setShowPreview((v) => !v)}
+            >
               Preview “retry once” edit
             </button>
           )}
-          <button onClick={rebuild} disabled={loading}>
+          <button className="dg-btn" onClick={rebuild} disabled={loading}>
             {loading ? 'Building…' : 'Rebuild with Gemini'}
           </button>
         </div>
       </div>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="toolbar error">{error}</p>}
       <GraphCanvas graph={graph} preview={showPreview ? exampleEdit : null} />
     </div>
   )

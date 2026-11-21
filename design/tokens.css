@@ -1,0 +1,70 @@
+/* Diogenes design tokens v0.1 — import once at the app root. */
+/* Fonts are bundled, not fetched (the app CSP blocks remote fonts): the renderer imports
+   @fontsource-variable/manrope and @fontsource/pixelify-sans in src/renderer/src/main.tsx. */
+/* OffBit: drop the font files in ./fonts and uncomment.
+@font-face { font-family: "OffBit"; src: url("./fonts/OffBit-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; } */
+
+:root {
+  --dg-bg: #0B0D09;
+  --dg-surface-1: #12150F;
+  --dg-surface-2: #181C13;
+  --dg-surface-3: #20261A;
+  --dg-border: #272D1F;
+  --dg-border-strong: #3A4230;
+  --dg-text: #ECE8DC;
+  --dg-text-2: #A9AB98;
+  --dg-text-3: #80836F;
+  --dg-accent: #F2962B;
+  --dg-on-accent: #0B0D09;
+  --dg-warn: #F2C94C;
+  --dg-danger: #E0662A;
+  --dg-ok: #8FA33A;
+  --dg-info: #93A6AB;
+  --dg-selected: #3E4A1E;
+  --dg-connector: #59614B;
+  --dg-grid: #181C13;
+
+  --dg-font-ui: "Manrope Variable", "Manrope", sans-serif;
+  --dg-font-bit: "OffBit", "Pixelify Sans", monospace;
+
+  --dg-space-1: 2px; --dg-space-2: 4px; --dg-space-3: 6px; --dg-space-4: 8px;
+  --dg-space-5: 12px; --dg-space-6: 16px; --dg-space-7: 24px;
+
+  --dg-radius-pane: 0;
+  --dg-radius-control: 2px;
+
+  --dg-control-h: 26px;
+  --dg-row-h: 24px;
+  --dg-titlebar-h: 34px;
+  --dg-statusbar-h: 22px;
+  --dg-grid-size: 24px;
+}
+
+html, body { background: var(--dg-bg); color: var(--dg-text); font: 500 12px/1.45 var(--dg-font-ui); margin: 0; }
+
+.dg-label { font: 400 11px/1 var(--dg-font-bit); letter-spacing: .06em; text-transform: uppercase; color: var(--dg-text-3); }
+.dg-data  { font: 400 11px/1.2 var(--dg-font-bit); color: var(--dg-text-2); }
+
+.dg-btn { height: var(--dg-control-h); padding: 0 8px; display: inline-flex; align-items: center; gap: 6px;
+  font: 600 12px/1 var(--dg-font-ui); border-radius: var(--dg-radius-control); cursor: pointer;
+  background: var(--dg-surface-3); color: var(--dg-text); border: 1px solid var(--dg-border-strong); }
+.dg-btn--primary { background: var(--dg-accent); color: var(--dg-on-accent); border-color: var(--dg-accent); }
+.dg-btn--ghost   { background: transparent; color: var(--dg-text-2); border-color: transparent; }
+.dg-btn--danger  { background: transparent; color: var(--dg-danger); border-color: var(--dg-danger); }
+.dg-btn:focus-visible, .dg-input:focus-visible { outline: 1px solid var(--dg-accent); outline-offset: 1px; }
+
+.dg-input { height: var(--dg-control-h); box-sizing: border-box; padding: 0 8px; background: var(--dg-bg);
+  border: 1px solid var(--dg-border-strong); border-radius: var(--dg-radius-control); color: var(--dg-text); font: 500 12px var(--dg-font-ui); }
+
+.dg-pill { font: 400 10px/1 var(--dg-font-bit); letter-spacing: .06em; text-transform: uppercase;
+  border: 1px solid currentColor; border-radius: var(--dg-radius-control); padding: 3px 5px; }
+.dg-kbd  { font: 400 10px/1 var(--dg-font-bit); color: var(--dg-text-2); border: 1px solid var(--dg-border-strong);
+  border-radius: var(--dg-radius-control); padding: 2px 4px; }
+
+.dg-canvas { background:
+  linear-gradient(var(--dg-grid) 1px, transparent 1px) 0 0 / var(--dg-grid-size) var(--dg-grid-size),
+  linear-gradient(90deg, var(--dg-grid) 1px, transparent 1px) 0 0 / var(--dg-grid-size) var(--dg-grid-size), var(--dg-bg); }
+
+.dg-node { background: var(--dg-surface-2); border: 1px solid var(--dg-border-strong); border-radius: var(--dg-radius-control); }
+.dg-node[data-selected="true"] { border-color: var(--dg-accent); }
+.dg-node[data-proposed="true"] { border: 1px dashed var(--dg-accent); background: rgba(242,150,43,.05); }

@@ -21,15 +21,20 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: GithubUser) => void }):
 
   return (
     <div className="screen">
-      <h1>Diogenes</h1>
+      <span className="dg-label">Diogenes · v0.1</span>
+      <h1 className="display">Draw the system.</h1>
       <p className="muted">See your architecture. Plan changes on a canvas.</p>
       {code ? (
         <>
-          <p>Enter this code on GitHub:</p>
-          <output className="code" aria-live="polite">
-            {code.userCode}
-          </output>
-          <button onClick={() => navigator.clipboard.writeText(code.userCode)}>Copy code</button>
+          <span className="dg-label">Enter this code on GitHub</span>
+          <div className="row">
+            <output className="code" aria-live="polite">
+              {code.userCode}
+            </output>
+            <button className="dg-btn" onClick={() => navigator.clipboard.writeText(code.userCode)}>
+              Copy
+            </button>
+          </div>
           <p className="muted">
             Waiting for approval at{' '}
             <a href={code.verificationUri} target="_blank" rel="noreferrer">
@@ -37,16 +42,24 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: GithubUser) => void }):
             </a>
             …
           </p>
-          <button className="link" onClick={signIn}>
-            Get a new code
-          </button>
+          <div>
+            <button className="dg-btn dg-btn--ghost" onClick={signIn}>
+              Get a new code
+            </button>
+          </div>
         </>
       ) : (
-        <button className="primary" onClick={signIn}>
-          Sign in with GitHub
-        </button>
+        <div>
+          <button className="dg-btn dg-btn--primary" onClick={signIn}>
+            Sign in with GitHub
+          </button>
+        </div>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   )
 }

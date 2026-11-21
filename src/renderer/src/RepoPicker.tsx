@@ -21,15 +21,16 @@ export function RepoPicker({ user, onPick, onSignOut }: Props): React.JSX.Elemen
   return (
     <div className="screen wide">
       <header className="row">
-        <h2>Pick a repository</h2>
-        <span className="muted">
-          {user.login} ·{' '}
-          <button className="link" onClick={onSignOut}>
+        <h2 className="title">Pick a repository</h2>
+        <span className="row">
+          <span className="dg-data">@{user.login}</span>
+          <button className="dg-btn dg-btn--ghost" onClick={onSignOut}>
             Sign out
           </button>
         </span>
       </header>
       <input
+        className="dg-input"
         type="search"
         placeholder="Filter repositories"
         aria-label="Filter repositories"
@@ -37,20 +38,31 @@ export function RepoPicker({ user, onPick, onSignOut }: Props): React.JSX.Elemen
         onChange={(e) => setQuery(e.target.value)}
         autoFocus
       />
-      {error && <p role="alert">{error}</p>}
-      {!repos && !error && <p className="muted">Loading repositories…</p>}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      {!repos && !error && <p className="dg-label">Loading repositories…</p>}
       {shown?.length === 0 && <p className="muted">No repositories match.</p>}
-      <ul className="repos">
-        {shown?.map((r) => (
-          <li key={r.id}>
-            <button onClick={() => onPick(r)}>
-              <strong>{r.fullName}</strong>
-              {r.private && <span className="badge">private</span>}
-              {r.description && <span className="muted">{r.description}</span>}
-            </button>
-          </li>
-        ))}
-      </ul>
+      {!!shown?.length && (
+        <ul className="repos">
+          {shown.map((r) => (
+            <li key={r.id}>
+              <button onClick={() => onPick(r)}>
+                <span className="name">{r.fullName}</span>
+                <span
+                  className="dg-pill"
+                  style={{ color: r.private ? 'var(--dg-warn)' : 'var(--dg-text-3)' }}
+                >
+                  {r.private ? 'private' : 'public'}
+                </span>
+                {r.description && <span className="dg-data">{r.description}</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
