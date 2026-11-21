@@ -35,6 +35,8 @@ export function AppLevel({
   const [version, setVersion] = useState(0)
   const waiting = indexRunning(indexStatus)
   const asked = useRef<number | null>(null)
+  // The repo whose saved map we looked for and didn't find; only then is Gemini called on its own.
+  const [noSaved, setNoSaved] = useState<number | null>(null)
 
   const infer = async (): Promise<void> => {
     if (!repo) return
@@ -56,15 +58,34 @@ export function AppLevel({
     }
   }
 
-  // Read the repo once, after indexing settles, so Gemini sees the index too.
+  // A repo opened before shows its saved map at once, without waiting for indexing or Gemini.
+  const repoId = repo?.id
   useEffect(() => {
-    if (!repo || flow || waiting || asked.current === repo.id) return
+    if (repoId === undefined || flow) return
+    let active = true
+    void window.api.gemini.loadAppFlow(repoId).then((saved) => {
+      if (!active) return
+      if (saved) onFlow(saved)
+      else setNoSaved(repoId)
+    })
+    return () => {
+      active = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per repo
+  }, [repoId])
+
+  // First open only: read the repo after indexing settles, so Gemini sees the index too. The
+  // result is saved; after that it is redrawn only on Re-read.
+  useEffect(() => {
+    if (!repo || flow || waiting || noSaved !== repo.id || asked.current === repo.id) return
     asked.current = repo.id
     void infer()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `infer` only reads these
-  }, [repo, flow, waiting])
+  }, [repo, flow, waiting, noSaved])
 
   const shown = repo ? flow : EXAMPLE_FLOW
+  // Still looking on disk: no "Read repo" button yet, or a click would redo a saved map.
+  const checking = !!repo && !flow && noSaved !== repo.id
   const status = (
     <>
       <span className="dg-label">
@@ -103,9 +124,13 @@ export function AppLevel({
             <PaneToggle side="left" />
           </div>
           <span className="dg-label">
-            {busy || waiting ? `Reading ${repo?.fullName}…` : 'No map yet.'}
+            {checking
+              ? `Opening ${repo?.fullName}…`
+              : busy || waiting
+                ? `Reading ${repo?.fullName}…`
+                : 'No map yet.'}
           </span>
-          {!busy && !waiting && (
+          {!busy && !waiting && !checking && (
             <button className="dg-btn" onClick={() => void infer()}>
               Read repo
             </button>
