@@ -33,6 +33,21 @@ Types are in [src/shared/indexing.ts](../src/shared/indexing.ts). The main proce
 
 `window.api.gemini.runManagedRetry(graph, proposal)` runs after the user approves a retry-once edit on the bundled background-job example. The main process sends the validated edit and bundled fixture to Antigravity with Gemini 4 Carbon. It returns the remote acceptance checks and diff through the preload bridge. [Fixture verification](../fixtures/background-job/verify-retry.mjs).
 
+### Managed coding runs (main process, not yet on the bridge)
+
+`createCodingRunGateway({ dataDir })` in [src/main/coding](../src/main/coding/index.ts) returns a `CodingRunApi` ([types](../src/shared/codingRun.ts)). It turns an approved `CodingHandoff` and its in-scope sources at `baseCommit` into one durable Antigravity session.
+
+| Call                        | Effect                                                                                                                             |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `start({ handoff, files })` | Validates scope and inline limits, persists the run, returns `runId` with phase `starting`, then creates the interaction.          |
+| `status(runId)`             | Refreshes a `running` turn from the provider, then downloads and checks the turn's candidate.                                      |
+| `reopen(runId)`             | After a restart: an unanswered create becomes `uncertain`, a running turn is refreshed, an idle environment is checked for expiry. |
+| `followUp(runId, message)`  | Only when `idle`. Sends `previous_interaction_id` and the same `environment` ID, so the agent keeps its conversation and files.    |
+| `retry(runId)`              | Only when `uncertain`. Resends the latest turn and records another entry in `turn.attempts`. Nothing is resent automatically.      |
+| `list()`                    | Persisted runs with phase and candidate status, newest first.                                                                      |
+
+The agent must end each turn by running the staged `export-candidate.mjs` with that turn's token. It writes a `git diff --binary` against the staged base, with sha256 and source digest, to `/workspace/.diogenes/out/candidate.json`, which the gateway downloads through the Environments files API. `candidate.status` is `ready` only when the token, source digest, checksum and scope all match. Apply it with `git apply --index` on a clean checkout of `baseCommit`. Runs live under `<dataDir>/coding-runs/<runId>/`. `pnpm vitest run test/coding` exercises the lifecycle against a fake provider.
+
 ## Proposed tools
 
 These are ownership targets for teammates. Add a callable name here when its interface exists.
