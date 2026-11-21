@@ -2,12 +2,16 @@ import { useEffect, useState } from 'react'
 import type { GithubRepo, GithubUser } from '../../preload'
 import { SignIn } from './SignIn'
 import { RepoPicker } from './RepoPicker'
+import { CreateRepo } from './CreateRepo'
+import { NewProject } from './NewProject'
 
 const LEVELS = ['Infrastructure', 'Integrations', 'Code logic'] as const
 
 function App(): React.JSX.Element {
   const [user, setUser] = useState<GithubUser | null | undefined>(undefined)
   const [repo, setRepo] = useState<GithubRepo | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [newRepo, setNewRepo] = useState<GithubRepo | null>(null)
   const [level, setLevel] = useState(0)
 
   useEffect(() => {
@@ -17,12 +21,34 @@ function App(): React.JSX.Element {
   const signOut = async (): Promise<void> => {
     await window.api.github.logout()
     setRepo(null)
+    setNewRepo(null)
+    setCreating(false)
     setUser(null)
   }
 
   if (user === undefined) return <div className="screen dg-label">Loading…</div>
   if (!user) return <SignIn onSignedIn={setUser} />
-  if (!repo) return <RepoPicker user={user} onPick={setRepo} onSignOut={signOut} />
+  if (newRepo) return <NewProject repo={newRepo} onExit={() => setNewRepo(null)} />
+  if (creating)
+    return (
+      <CreateRepo
+        user={user}
+        onCreated={(r) => {
+          setCreating(false)
+          setNewRepo(r)
+        }}
+        onCancel={() => setCreating(false)}
+      />
+    )
+  if (!repo)
+    return (
+      <RepoPicker
+        user={user}
+        onPick={setRepo}
+        onNew={() => setCreating(true)}
+        onSignOut={signOut}
+      />
+    )
 
   return (
     <div className="shell">

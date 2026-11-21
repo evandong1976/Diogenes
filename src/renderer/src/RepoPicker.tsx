@@ -4,10 +4,11 @@ import type { GithubRepo, GithubUser } from '../../preload'
 type Props = {
   user: GithubUser
   onPick: (repo: GithubRepo) => void
+  onNew: () => void
   onSignOut: () => void
 }
 
-export function RepoPicker({ user, onPick, onSignOut }: Props): React.JSX.Element {
+export function RepoPicker({ user, onPick, onNew, onSignOut }: Props): React.JSX.Element {
   const [repos, setRepos] = useState<GithubRepo[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -29,6 +30,12 @@ export function RepoPicker({ user, onPick, onSignOut }: Props): React.JSX.Elemen
           </button>
         </span>
       </header>
+      <div className="row">
+        <span className="muted">Open an existing repository, or start a new one.</span>
+        <button className="dg-btn dg-btn--primary" onClick={onNew}>
+          New repository
+        </button>
+      </div>
       <input
         className="dg-input"
         type="search"

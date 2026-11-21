@@ -1,7 +1,7 @@
 import { app, ipcMain, safeStorage, shell } from 'electron'
 import { readFile, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
-import type { DeviceCode, GithubRepo, GithubUser } from '../preload'
+import type { DeviceCode, GithubRepo, GithubUser, NewRepo } from '../preload'
 
 const CLIENT_ID = import.meta.env.MAIN_VITE_GITHUB_CLIENT_ID
 // Classic OAuth apps have no read-only scope for private repos, so `repo` it is.
@@ -31,18 +31,30 @@ async function logout(): Promise<void> {
   await rm(tokenPath(), { force: true })
 }
 
-async function githubApi<T>(path: string): Promise<T> {
+/** GET by default; passing a body makes it a JSON POST. */
+async function githubApi<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(`https://api.github.com${path}`, {
+    method: body === undefined ? 'GET' : 'POST',
     headers: {
       Authorization: `Bearer ${await loadToken()}`,
-      Accept: 'application/vnd.github+json'
-    }
+      Accept: 'application/vnd.github+json',
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' })
+    },
+    body: body === undefined ? undefined : JSON.stringify(body)
   })
   if (res.status === 401) {
     await logout()
     throw new Error('GitHub session expired. Sign in again.')
   }
-  if (!res.ok) throw new Error(`GitHub API ${res.status} on ${path}`)
+  if (!res.ok) {
+    // GitHub explains 4xx failures, e.g. 422 "name already exists on this account".
+    const err = (await res.json().catch(() => null)) as {
+      message?: string
+      errors?: { message?: string }[]
+    } | null
+    const detail = err?.errors?.[0]?.message ?? err?.message
+    throw new Error(detail ? `GitHub: ${detail}` : `GitHub API ${res.status} on ${path}`)
+  }
   return res.json() as Promise<T>
 }
 
@@ -112,26 +124,49 @@ async function finishLogin(): Promise<GithubUser> {
   throw new Error(pending === flow ? 'Sign-in code expired. Try again.' : 'Sign-in was restarted.')
 }
 
+type RawRepo = {
+  id: number
+  full_name: string
+  private: boolean
+  description: string | null
+  default_branch: string
+  updated_at: string
+}
+
+const toRepo = (r: RawRepo): GithubRepo => ({
+  id: r.id,
+  fullName: r.full_name,
+  private: r.private,
+  description: r.description,
+  defaultBranch: r.default_branch,
+  updatedAt: r.updated_at
+})
+
 // ponytail: first 100 repos by recent activity; paginate via the Link header if users hit the cap.
 async function listRepos(): Promise<GithubRepo[]> {
-  const repos = await githubApi<
-    {
-      id: number
-      full_name: string
-      private: boolean
-      description: string | null
-      default_branch: string
-      updated_at: string
-    }[]
-  >('/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member')
-  return repos.map((r) => ({
-    id: r.id,
-    fullName: r.full_name,
-    private: r.private,
-    description: r.description,
-    defaultBranch: r.default_branch,
-    updatedAt: r.updated_at
-  }))
+  const repos = await githubApi<RawRepo[]>(
+    '/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member'
+  )
+  return repos.map(toRepo)
+}
+
+// Same rule GitHub applies; it would otherwise silently rewrite other characters to "-".
+const REPO_NAME = /^[A-Za-z0-9._-]{1,100}$/
+
+// ponytail: personal account only; org owners need the read:org scope to list orgs.
+async function createRepo(_e: unknown, input: NewRepo): Promise<GithubRepo> {
+  const name = String(input?.name ?? '').trim()
+  if (!REPO_NAME.test(name) || name === '.' || name === '..') {
+    throw new Error('Use letters, numbers, ".", "-" or "_" (up to 100 characters).')
+  }
+  const repo = await githubApi<RawRepo>('/user/repos', {
+    name,
+    description: String(input.description ?? '').slice(0, 350) || undefined,
+    private: input.private !== false,
+    // An initial commit gives the repo a default branch, so it can be indexed and cloned right away.
+    auto_init: true
+  })
+  return toRepo(repo)
 }
 
 export function registerGithubIpc(): void {
@@ -140,4 +175,5 @@ export function registerGithubIpc(): void {
   ipcMain.handle('github:finishLogin', finishLogin)
   ipcMain.handle('github:logout', logout)
   ipcMain.handle('github:listRepos', listRepos)
+  ipcMain.handle('github:createRepo', createRepo)
 }
