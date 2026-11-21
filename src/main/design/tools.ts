@@ -103,10 +103,11 @@ const PROTOCOLS = [
 ]
 
 const str = (description: string): Record<string, unknown> => ({ type: 'string', description })
-const strList = (description: string): Record<string, unknown> => ({
+const strList = (description: string, maxItems = 4): Record<string, unknown> => ({
   type: 'array',
   items: { type: 'string' },
-  description
+  maxItems,
+  description: `${description} At most ${maxItems}, one short sentence each.`
 })
 const endpoint = {
   type: 'object',
@@ -215,17 +216,19 @@ export const toolDeclarations: FunctionDeclaration[] = [
             'The plan the developer reviews and the coding agent receives with the patch.',
           properties: {
             conversationSummary: str(
-              'Two to four sentences for an engineer joining the conversation: product goal, motivation if known, decisions agreed with the developer, and material constraints.'
+              'One or two sentences for an engineer joining the conversation: product goal, decisions agreed with the developer, and material constraints.'
             ),
-            behavior: str('What the system does once the change lands, in plain words.'),
+            behavior: str('One sentence: what the system does once the change lands.'),
             steps: strList('Ordered system design changes, naming components and citing files where helpful.'),
-            preserved: strList('Behavior and connections that must stay true.'),
-            implementationChoices: strList('Decisions left to the coding agent inside the approved scope.'),
+            preserved: strList('Behavior and connections that must stay true.', 3),
+            implementationChoices: strList('Decisions left to the coding agent inside the approved scope.', 2),
             acceptance: strList(
-              'Concrete checks a reviewer or coding agent can run to see it worked. Diogenes does not prove these.'
+              'Concrete checks a reviewer or coding agent can run to see it worked. Diogenes does not prove these.',
+              3
             ),
             files: strList(
-              'Repository-relative files the steps must edit or create beyond the touched components\' source, e.g. package.json or src/lib/supabase.ts. Files only, never directories; at most 8.'
+              'Repository-relative files the steps must edit or create beyond the touched components\' source, e.g. package.json or src/lib/supabase.ts. Files only, never directories.',
+              8
             )
           },
           required: ['conversationSummary', 'behavior', 'steps', 'acceptance']

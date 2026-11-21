@@ -34,6 +34,8 @@ export interface ModelRequest {
   tools: FunctionDeclaration[]
   /** NONE asks for a text answer only, e.g. to explain a proposal after it was recorded. */
   toolMode: 'AUTO' | 'NONE'
+  /** How long the model reasons before answering. Lower is faster. Omit for the model's default. */
+  thinkingLevel?: 'low' | 'high'
   signal: AbortSignal
 }
 
@@ -56,7 +58,7 @@ export function geminiModelClient(
   apiKey: () => string | undefined = () => process.env.GEMINI_API_KEY?.trim()
 ): ModelClient {
   return {
-    async generate({ model, system, contents, tools, toolMode, signal }) {
+    async generate({ model, system, contents, tools, toolMode, thinkingLevel, signal }) {
       const key = apiKey()
       if (!key) throw new Error('GEMINI_API_KEY is missing from the main-process environment.')
       if (!/^[\w.-]+$/.test(model)) throw new Error(`Invalid model ID ${model}.`)
@@ -71,7 +73,8 @@ export function geminiModelClient(
             systemInstruction: { parts: [{ text: system }] },
             contents,
             tools: [{ functionDeclarations: tools }],
-            toolConfig: { functionCallingConfig: { mode: toolMode } }
+            toolConfig: { functionCallingConfig: { mode: toolMode } },
+            ...(thinkingLevel && { generationConfig: { thinkingConfig: { thinkingLevel } } })
           }),
           signal: AbortSignal.any([signal, AbortSignal.timeout(90_000)])
         })

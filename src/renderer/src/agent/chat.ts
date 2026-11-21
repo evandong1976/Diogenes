@@ -16,7 +16,7 @@ import type { ThreadEvent } from '../../../shared/threads'
  * Selectable design models. Mirrors `DESIGN_MODELS` in src/main/design/index.ts: the bridge does
  * not list them yet, and the backend rejects any ID it does not offer.
  */
-export const DESIGN_MODELS = ['gemini-4-carbon', 'gemini-4-hydrogen'] as const
+export const DESIGN_MODELS = ['gemini-4-hydrogen', 'gemini-4-carbon'] as const
 
 /** One developer turn: the message, what the agent did, its reply, and any proposal. */
 export interface TurnItem {
