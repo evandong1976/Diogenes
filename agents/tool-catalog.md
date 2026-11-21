@@ -27,7 +27,7 @@ Types are in [src/shared/indexing.ts](../src/shared/indexing.ts). The main proce
 
 `window.api.indexing.getGraph(repoId)` includes a derived `catalog` for snapshots produced by this version of the indexer. The catalog exposes component types, source spans and typed connections at the indexed SHA. Refresh older snapshots to populate it.
 
-`window.api.catalog.preview(patch)` validates ordered catalog operations against the authorized, observed snapshot and returns a new draft graph or a structured rejection. It leaves the observed snapshot on disk intact. To preview several edits, submit the combined operation list against the observed revision. The renderer uses this bridge for component creation and deletion previews. The same contract can be used by an agent tool that proposes catalog edits.
+`window.api.catalog.preview(patch)` validates ordered catalog operations against the authorized, observed snapshot and returns a new draft graph or a structured rejection. It leaves the observed snapshot on disk intact. To preview several edits, submit the combined operation list against the observed revision. The renderer uses this bridge to preview adding components, unlinking connections and deleting components. The same contract can be used by an agent tool that proposes catalog edits.
 
 ## Proposed tools
 

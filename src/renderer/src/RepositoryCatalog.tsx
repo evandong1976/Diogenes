@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
-import type { CatalogGraph, CatalogKind, CatalogNode, CatalogOperation } from '../../shared/catalog'
+import type {
+  CatalogGraph,
+  CatalogKind,
+  CatalogNode,
+  CatalogOperation,
+  CatalogSource
+} from '../../shared/catalog'
 import type { IndexStatus, SoftwareGraph } from '../../shared/indexing'
 
 const kindsByLevel: CatalogKind[][] = [
@@ -19,6 +25,34 @@ const labels: Record<CatalogKind, string> = {
   trigger: 'Trigger',
   workflow: 'Workflow',
   generic: 'Component'
+}
+
+function SourceLinks({
+  graph,
+  sources
+}: {
+  graph: CatalogGraph
+  sources: CatalogSource[]
+}): React.JSX.Element | null {
+  if (sources.length === 0) return null
+  const repo = graph.repository.fullName.split('/').map(encodeURIComponent).join('/')
+  return (
+    <ul aria-label="Source bindings">
+      {sources.map((source, i) => {
+        const line = source.span ? source.span.start.line + 1 : undefined
+        const path = source.path.split('/').map(encodeURIComponent).join('/')
+        const url = `https://github.com/${repo}/blob/${graph.commit.sha}/${path}${line ? `#L${line}` : ''}`
+        return (
+          <li className="dg-data" key={i}>
+            <a href={url} target="_blank" rel="noreferrer">
+              {source.path}
+              {line ? ':' + line : ''}
+            </a>
+          </li>
+        )
+      })}
+    </ul>
+  )
 }
 
 export function RepositoryCatalog({
@@ -267,34 +301,7 @@ export function RepositoryCatalog({
                 <p className="dg-data">
                   {labels[selected.kind]} · {selected.resolution}
                 </p>
-                {selected.sources.length > 0 && (
-                  <ul aria-label="Source bindings">
-                    {selected.sources.map((source, i) => {
-                      const line = source.span ? source.span.start.line + 1 : undefined
-                      const path = source.path.split('/').map(encodeURIComponent).join('/')
-                      const repo = shown.repository.fullName
-                        .split('/')
-                        .map(encodeURIComponent)
-                        .join('/')
-                      const url =
-                        'https://github.com/' +
-                        repo +
-                        '/blob/' +
-                        shown.commit.sha +
-                        '/' +
-                        path +
-                        (line ? '#L' + line : '')
-                      return (
-                        <li className="dg-data" key={i}>
-                          <a href={url} target="_blank" rel="noreferrer">
-                            {source.path}
-                            {line ? ':' + line : ''}
-                          </a>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                )}
+                <SourceLinks graph={shown} sources={selected.sources} />
                 {links.length > 0 && (
                   <ul aria-label="Connections">
                     {links.map((edge) => {
@@ -303,12 +310,29 @@ export function RepositoryCatalog({
                       const label = shown.nodes.find((node) => node.id === other)?.name ?? other
                       return (
                         <li key={edge.id}>
-                          <button
-                            className="dg-btn dg-btn--ghost"
-                            onClick={() => setSelectedId(other)}
-                          >
-                            {edge.kind} · {label}
-                          </button>
+                          <details>
+                            <summary>
+                              {edge.kind.replaceAll('_', ' ')} · {label}
+                            </summary>
+                            <SourceLinks graph={shown} sources={edge.sources} />
+                            <div className="row">
+                              <button
+                                className="dg-btn dg-btn--ghost"
+                                onClick={() => setSelectedId(other)}
+                              >
+                                Inspect component
+                              </button>
+                              <button
+                                className="dg-btn dg-btn--ghost"
+                                disabled={busy || checking}
+                                onClick={() =>
+                                  void previewEdit({ type: 'disconnect', edgeId: edge.id })
+                                }
+                              >
+                                Preview unlink
+                              </button>
+                            </div>
+                          </details>
                         </li>
                       )
                     })}
