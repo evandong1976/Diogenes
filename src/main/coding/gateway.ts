@@ -347,7 +347,8 @@ export class CodingRunGateway implements CodingRunApi {
   ): Promise<void> {
     turn.providerStatus = interaction.status
     run.environmentId ??= interaction.environmentId
-    if (interaction.steps.length || !isActive(interaction.status)) {
+    const previousSteps = run.activity.filter((a) => a.turn === turn.index)
+    if (!isActive(interaction.status) || interaction.steps.length >= previousSteps.length) {
       run.activity = [
         ...run.activity.filter((a) => a.turn !== turn.index),
         ...interaction.steps.map((s): CodingActivity => ({

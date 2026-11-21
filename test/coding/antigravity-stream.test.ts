@@ -27,9 +27,6 @@ describe('managed coding activity', () => {
     })
     const provider = createAntigravityProvider({ apiKey: 'test', fetch: fetcher as typeof fetch })
     const result = await provider.get('interaction')
-    expect(result.steps.map((step) => step.text)).toEqual([
-      'view_file · /workspace/repo/src/index.ts',
-      'view_file finished'
-    ])
+    expect(result.steps.map((step) => step.text)).toEqual(['Reading file · src/index.ts'])
   })
 })

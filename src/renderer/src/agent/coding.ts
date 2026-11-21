@@ -162,6 +162,7 @@ export function traceRows(events: RunEvent[]): TraceRow[] {
     if (e.text === 'thought') return []
     if (e.kind === 'tool' && e.shell === 'output')
       return [{ key, kind: 'output', text: e.text, long: e.text.split('\n').length > 8 }]
+    if (e.kind === 'tool' && !e.shell) return [{ key, kind: 'status', text: e.text }]
     if (e.kind === 'tool') return [{ key, kind: 'command', text: e.text }]
     return [{ key, kind: e.kind, text: e.text }]
   })

@@ -30,7 +30,16 @@ interface RawInteraction {
 function toStep(step: RawStep): ProviderStep {
   if (step.type === 'function_call') {
     const path = step.arguments?.AbsolutePath ?? step.arguments?.SearchDirectory
-    return { type: 'other', text: `${step.name ?? 'Tool'}${path ? ` · ${path}` : ''}` }
+    const name =
+      step.name === 'view_file'
+        ? 'Reading file'
+        : step.name === 'find_by_name'
+          ? 'Finding files'
+          : (step.name ?? 'Using tool')
+    return {
+      type: 'other',
+      text: `${name}${path ? ` · ${path.replace(/^\/workspace\/repo\/?/, '') || 'repository'}` : ''}`
+    }
   }
   if (step.type === 'function_result') {
     return {
@@ -129,7 +138,12 @@ export function createAntigravityProvider(options: {
             .join('\n')
           if (!data || data === '[DONE]') continue
           const event = JSON.parse(data) as { event_type?: string; step?: RawStep }
-          if (event.event_type === 'step.start' && event.step && event.step.type !== 'thought') {
+          if (
+            event.event_type === 'step.start' &&
+            event.step &&
+            event.step.type !== 'thought' &&
+            event.step.type !== 'function_result'
+          ) {
             steps.push(toStep(event.step))
             if (steps.length > 150) steps.shift()
           }
