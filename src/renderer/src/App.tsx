@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react'
 import type { GithubRepo, GithubUser } from '../../preload'
 import { SignIn } from './SignIn'
 import { RepoPicker } from './RepoPicker'
+import { CodeLogicLevel } from './canvas/CodeLogicLevel'
 
 const LEVELS = ['Infrastructure', 'Integrations', 'Code logic'] as const
 
 function App(): React.JSX.Element {
   const [user, setUser] = useState<GithubUser | null | undefined>(undefined)
   const [repo, setRepo] = useState<GithubRepo | null>(null)
-  const [level, setLevel] = useState(0)
+  // Code logic is the only level with data so far.
+  const [level, setLevel] = useState(2)
 
   useEffect(() => {
     window.api.github.getUser().then(setUser, () => setUser(null))
@@ -36,8 +38,14 @@ function App(): React.JSX.Element {
           </button>
         ))}
       </nav>
-      <main style={{ flex: 1, display: 'grid', placeItems: 'center', opacity: 0.5 }}>
-        Canvas: {LEVELS[level]}
+      <main style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        {level === 2 ? (
+          <CodeLogicLevel />
+        ) : (
+          <div className="screen muted" style={{ flex: 1, minHeight: 0 }}>
+            No {LEVELS[level]} view yet.
+          </div>
+        )}
       </main>
     </div>
   )
