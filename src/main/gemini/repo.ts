@@ -19,7 +19,7 @@ import {
   isSafeRepoPath,
   type FixtureSource
 } from './contracts.ts'
-import { encodePng, generate, proposalInstruction } from './service.ts'
+import { encodePng, generate, IMAGE_TIMEOUT_MS, proposalInstruction } from './service.ts'
 
 // ---- Picking files ----
 
@@ -221,7 +221,8 @@ export async function proposeEdit(graph: unknown, png: unknown): Promise<Proposa
       { text: JSON.stringify(current) },
       { inlineData: { mimeType: 'image/png', data: encodePng(png) } }
     ],
-    proposalSchema
+    proposalSchema,
+    { timeoutMs: IMAGE_TIMEOUT_MS }
   )
   return validateProposal(result, current)
 }

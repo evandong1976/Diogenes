@@ -17,11 +17,32 @@ interface GenerationResponse {
   }[]
 }
 
+/** Image proposals make Carbon read a picture and reason over the graph; text calls are quicker. */
+export const IMAGE_TIMEOUT_MS = 180_000
+const DEFAULT_TIMEOUT_MS = 60_000
+
+/** Says why a request never got a response: our timeout, or the network error's own cause. */
+export function requestFailure(model: Model, error: unknown, timeoutMs: number): Error {
+  const e = error as {
+    name?: string
+    message?: string
+    cause?: { code?: string; message?: string }
+  }
+  if (e?.name === 'TimeoutError' || e?.name === 'AbortError') {
+    return new Error(
+      `Gemini ${model} did not answer within ${Math.round(timeoutMs / 1000)} seconds.`
+    )
+  }
+  const cause = e?.cause?.code ?? e?.cause?.message ?? e?.message
+  return new Error(`Could not reach the Gemini API for ${model}${cause ? ` (${cause})` : ''}.`)
+}
+
 export async function generate(
   model: Model,
   instruction: string,
   parts: Part[],
-  schema: Record<string, unknown>
+  schema: Record<string, unknown>,
+  { timeoutMs = DEFAULT_TIMEOUT_MS }: { timeoutMs?: number } = {}
 ): Promise<unknown> {
   const key = process.env.GEMINI_API_KEY?.trim()
   if (!key) throw new Error('GEMINI_API_KEY is missing from the main-process environment.')
@@ -38,10 +59,10 @@ export async function generate(
         contents: [{ role: 'user', parts }],
         generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema }
       }),
-      signal: AbortSignal.timeout(60_000)
+      signal: AbortSignal.timeout(timeoutMs)
     })
-  } catch {
-    throw new Error(`Could not reach the Gemini API for ${model}.`)
+  } catch (error) {
+    throw requestFailure(model, error, timeoutMs)
   }
   if (!response.ok) throw new Error(`Gemini ${model} returned HTTP ${response.status}.`)
 
@@ -127,7 +148,8 @@ export function createGeminiService(files: FixtureSource[]): {
           { text: JSON.stringify(current) },
           { inlineData: { mimeType: 'image/png', data: encodePng(png) } }
         ],
-        proposalSchema
+        proposalSchema,
+        { timeoutMs: IMAGE_TIMEOUT_MS }
       )
       return validateProposal(result, current)
     }

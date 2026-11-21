@@ -795,6 +795,7 @@ strong.sidebar__name {
 }
 .component[data-shape='store'] .react-flow__handle.dg-port--in {
   top: calc(12px + var(--dg-node-header-h) / 2 - var(--dg-port-size) / 2);
+}
 
 /* ---------- Design chat: sidebar threads + right-hand pane ---------- */
 .app[data-chat] {
