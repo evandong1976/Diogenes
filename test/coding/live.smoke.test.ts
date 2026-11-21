@@ -62,6 +62,16 @@ it.skipIf(!live)(
     console.log('turn 1', JSON.stringify({ ...done, activity: done.activity.length }))
     expect(done.environmentId).toBe(turn0.environmentId)
     expect(done.candidate.status).toBe('ready')
+
+    // A third turn, cancelled while it runs: report what the provider confirmed.
+    await second.followUp(run.runId, 'Add a comment above the constant explaining it.')
+    await second.settle(run.runId)
+    const cancelled = await second.cancel(run.runId)
+    console.log('cancel', JSON.stringify(cancelled.cancellation))
+    expect(cancelled.phase).toBe('cancelled')
+    expect(['confirmed', 'requested', 'finished']).toContain(cancelled.cancellation?.outcome)
+    const later = await wait(second, run.runId)
+    console.log('after cancel', JSON.stringify({ phase: later.phase, c: later.cancellation }))
   },
-  600_000
+  900_000
 )

@@ -74,6 +74,21 @@ export class FakeServer {
     return view(interaction)
   }
 
+  readonly cancels: string[] = []
+  /** When set, a cancel is accepted but the turn keeps running until the next poll. */
+  slowCancel = false
+
+  /** Documented: only a running background interaction can be cancelled. */
+  cancel(id: string): ProviderInteraction {
+    const interaction = this.interactions.get(id)
+    if (!interaction) throw new ProviderError('gone', 'HTTP 404')
+    this.cancels.push(id)
+    if (interaction.status !== 'in_progress')
+      throw new ProviderError('rejected', 'HTTP 400: interaction is not running')
+    if (!this.slowCancel) interaction.status = 'cancelled'
+    return view(interaction)
+  }
+
   /** The agent finishes its turn the first time the interaction is polled after creation. */
   get(id: string): ProviderInteraction {
     const interaction = this.interactions.get(id)
@@ -129,6 +144,7 @@ export class FakeProvider implements ManagedAgentProvider {
   constructor(private readonly server: FakeServer) {}
   create = async (turn: CreateTurn): Promise<ProviderInteraction> => this.server.create(turn)
   get = async (id: string): Promise<ProviderInteraction> => this.server.get(id)
+  cancel = async (id: string): Promise<ProviderInteraction> => this.server.cancel(id)
   readFile = async (env: string, path: string): Promise<string> => this.server.readFile(env, path)
   environmentStatus = async (env: string): Promise<'active' | 'expired' | 'gone'> =>
     this.server.environmentStatus(env)

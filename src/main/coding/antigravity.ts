@@ -132,6 +132,13 @@ export function createAntigravityProvider(options: {
       })
       return interaction(await response.json())
     },
+    async cancel(id) {
+      const response = await request(`${base}/interactions/${encodeURIComponent(id)}/cancel`, {
+        method: 'POST',
+        timeout: 20_000
+      })
+      return interaction(await response.json())
+    },
     async readFile(environmentId, path) {
       const target = path.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/')
       const response = await request(

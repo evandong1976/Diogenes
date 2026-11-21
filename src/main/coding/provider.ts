@@ -62,6 +62,11 @@ export interface ManagedAgentProvider {
   readonly agent: string
   create(turn: CreateTurn): Promise<ProviderInteraction>
   get(interactionId: string): Promise<ProviderInteraction>
+  /**
+   * `POST /interactions/{id}/cancel`. Only a running background interaction can be cancelled;
+   * the status may take a moment to read `cancelled` in a later `get`.
+   */
+  cancel(interactionId: string): Promise<ProviderInteraction>
   /** Reads one file from a remote environment. `gone` if the file or environment is missing. */
   readFile(environmentId: string, path: string): Promise<string>
   /** `expired` or `gone` means the workspace can no longer be reused. */

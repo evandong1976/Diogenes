@@ -11,7 +11,7 @@
  * - `runId` is the coding gateway's ID for one managed run. A handoff has one run per attempt.
  * - `candidateId` is the git commit SHA the workflow materialized from a run's output.
  */
-import type { CatalogGraph, CatalogPatch, CatalogPatchResult } from './catalog'
+import type { CatalogEdgeKind, CatalogGraph, CatalogPatch, CatalogPatchResult } from './catalog'
 
 export interface WorkflowCorrelation {
   projectId: string
@@ -22,7 +22,8 @@ export interface WorkflowCorrelation {
 
 // ---------------------------------------------------------------- frozen approval
 
-export type ObligationId = 'native-typecheck' | 'graph-conformance' | 'bend-law'
+export type ObligationId =
+  'native-typecheck' | 'graph-conformance' | 'bend-law' | 'catalog-conformance'
 export type Outcome = 'pass' | 'fail' | 'unknown'
 
 /** A file at the approved base commit, frozen so the coding run and verifier see the same input. */
@@ -36,18 +37,35 @@ export interface SourceContext {
 /**
  * The frozen approval packet. Everything here is covered by `approvalId`. It records the design
  * decisions (patch, required changes, preserved behavior, obligations) and names the choices left
- * to the implementation.
+ * to the implementation. Two shapes exist, told apart by `kind`:
+ * - `RetryApprovedChange` (no `kind`): one update to a state machine with a Bend proof binding,
+ *   verified by the refund-retry verifier. Hand-frozen fixture packets have this shape.
+ * - `CatalogApprovedChange` (`kind: 'catalog'`): any other valid catalog patch, verified by
+ *   type checking the candidate and re-indexing it against the approved connections.
  */
-export interface ApprovedChange {
+export type ApprovedChange = RetryApprovedChange | CatalogApprovedChange
+
+interface ApprovedChangeBase {
   version: 1
   repository: { id: number; fullName: string }
   /** Full SHA of the baseline commit the patch was approved against. */
   baseCommit: string
-  catalog: { schemaVersion: number; revision: number; bindingPath: string }
   targetComponentId: string
   beforeDigest: string
   patch: CatalogPatch
   afterDigest: string
+  obligations: { id: ObligationId; scope: string }[]
+  requiredChanges: string[]
+  preserved: string[]
+  openChoices: string[]
+  /** Present on approvals frozen by the workflow. Hand-frozen fixture packets omit them. */
+  correlation?: WorkflowCorrelation
+  sourceContext?: SourceContext[]
+}
+
+export interface RetryApprovedChange extends ApprovedChangeBase {
+  kind?: undefined
+  catalog: { schemaVersion: number; revision: number; bindingPath: string }
   transitionIds: string[]
   bindings: {
     /** Candidate directory, relative to the repository root. */
@@ -56,14 +74,38 @@ export interface ApprovedChange {
     proof: { file: string }
     caller: { file: string; export: string }
   }
-  obligations: { id: ObligationId; scope: string }[]
-  requiredChanges: string[]
-  preserved: string[]
-  openChoices: string[]
   toolchain: { bendVersion: string; verifier: string; lawSourceDigest: string }
-  /** Present on approvals frozen by the workflow. Hand-frozen fixture packets omit them. */
-  correlation?: WorkflowCorrelation
-  sourceContext?: SourceContext[]
+}
+
+/** A connection the re-indexed candidate must show (`present`) or must not show (`absent`). */
+export interface ConnectionExpectation {
+  /** Stable within the packet, e.g. `present:calls:a->b`. */
+  id: string
+  expect: 'present' | 'absent'
+  /** `required` comes from the patch; `preserved` is an unchanged connection of a touched node. */
+  origin: 'required' | 'preserved'
+  kind: CatalogEdgeKind
+  from: string
+  to: string
+  description: string
+}
+
+export interface CatalogApprovedChange extends ApprovedChangeBase {
+  kind: 'catalog'
+  catalog: { schemaVersion: number; revision: number }
+  /** Repository paths (directories or files) the candidate may change. */
+  scope: string[]
+  connections: ConnectionExpectation[]
+  /** Node changes the indexer cannot observe; reported as `unknown`, never as a pass. */
+  unobservable: string[]
+  /** Catalog-only changes, such as declared port contracts. They ask nothing of the code. */
+  annotations: string[]
+  toolchain: { verifier: string; typescript: string }
+}
+
+/** Paths the candidate of `packet` may change. */
+export function editableScope(packet: ApprovedChange): string[] {
+  return packet.kind === 'catalog' ? packet.scope : [packet.bindings.root]
 }
 
 export interface ApprovalRecord {
@@ -103,7 +145,7 @@ export interface CodingHandoff {
   /** Files to seed the remote workspace with, at the base commit. */
   workspace: CandidateFile[]
   /** Paths the run may change. The workflow rejects candidates that touch anything else. */
-  editableRoot: string
+  editable: string[]
   correction?: CorrectionRequest
 }
 
@@ -124,6 +166,28 @@ export interface CodingRunSnapshot {
   remoteStatus?: string
   events: RunEvent[]
   error?: string
+  /** Index of the provider turn this snapshot describes. Follow-ups add turns to the same run. */
+  turn?: number
+  /** True while the managed workspace can take a follow-up turn. */
+  reusable?: boolean
+  /** Set once cancellation was requested. */
+  cancellation?: CancelOutcome
+}
+
+/**
+ * What a cancel achieved, as far as the provider confirmed it:
+ * - `confirmed`: the provider reports the remote turn `cancelled`.
+ * - `requested`: the provider accepted the cancel but still reported the turn running.
+ * - `finished`: the turn had already ended before the cancel; its work is kept.
+ * - `not-running`: no remote turn was in progress.
+ * - `unconfirmed`: Diogenes could not reach the provider or has no interaction ID; remote work
+ *   may still be running.
+ */
+export interface CancelOutcome {
+  outcome: 'confirmed' | 'requested' | 'finished' | 'not-running' | 'unconfirmed'
+  requestedAt: string
+  interactionId?: string
+  detail: string
 }
 
 /** What a completed run produced. Completion only means a candidate is ready for review. */
@@ -143,9 +207,10 @@ export interface CandidateBundle {
  * Managed coding boundary (Session 3). Notes from the Interactions API docs that shape it:
  * - `completed` only means the interaction finished. Map `incomplete` (budget hit) and
  *   `requires_continuation` by continuing inside the gateway, or report them as `failed`.
- * - A running interaction takes no new input. `steer` queues guidance that the gateway sends as a
- *   chained interaction (`previous_interaction_id` plus the same `environment`) once the current
- *   one stops, and records a `steer` event either way.
+ * - A running interaction takes no new input (chaining onto `in_progress` is a 400). `steer` sends
+ *   a chained interaction (`previous_interaction_id` plus the same `environment`) once the current
+ *   turn has ended, so the follow-up works in the same files; it is refused while a turn runs.
+ * - `cancel` calls `POST /interactions/{id}/cancel` and reports what the provider confirmed.
  * - Retrieve changed files from the environment files API rather than from model output.
  * - Interaction labels are lowercase and at most 63 characters, so tag runs with `handoffId` and
  *   `attempt`. The 64-hex `approvalId` does not fit; echo it from the handoff instead.
@@ -155,7 +220,7 @@ export interface CodingGateway {
   get(runId: string): Promise<CodingRunSnapshot>
   steer(runId: string, message: string): Promise<CodingRunSnapshot>
   cancel(runId: string): Promise<CodingRunSnapshot>
-  /** Rejects unless the run completed. */
+  /** Rejects unless the run's latest turn completed with a candidate. */
   retrieveCandidate(runId: string): Promise<CandidateBundle>
 }
 
@@ -255,7 +320,11 @@ export interface CandidateRecord {
 }
 
 export interface RunRecord {
+  /** Unique within the handoff; names the candidate ref. Steers and corrections each add one. */
   attempt: number
+  /** How this attempt started. A steer or correction may continue the previous run's workspace. */
+  origin?: 'start' | 'correction' | 'steer' | 'retry'
+  steer?: string
   run: CodingRunSnapshot
   correction?: CorrectionRequest
   candidate?: CandidateRecord
@@ -269,6 +338,7 @@ export interface HandoffRecord {
   approvalId: string
   correlation: WorkflowCorrelation
   stage: HandoffStage
+  /** Starts and corrections allowed; steers and retries of an unknown create do not count. */
   maxAttempts: number
   runs: RunRecord[]
   decision?: Extract<ThreadMessage, { kind: 'decision' }>

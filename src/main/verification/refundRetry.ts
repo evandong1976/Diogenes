@@ -19,7 +19,11 @@ import type {
   RetryEffect,
   RetryEvent
 } from '../../shared/catalog'
-import type { ApprovedChange, ObligationId, Outcome } from '../../shared/workflow'
+import type {
+  ObligationId,
+  Outcome,
+  RetryApprovedChange as ApprovedChange
+} from '../../shared/workflow'
 
 export type { ApprovedChange }
 
@@ -335,7 +339,10 @@ export function verifyRefundRetry(options: {
       workspace
     }
     const committedDomain = extractCandidate(options.repoDir, ctx)
-    const bendVersion = spawnSync(options.bend, ['version'], { env: bendEnv(), encoding: 'utf8' }).stdout?.trim()
+    const bendVersion = spawnSync(options.bend, ['version'], {
+      env: bendEnv(),
+      encoding: 'utf8'
+    }).stdout?.trim()
     const bendIssue =
       bendVersion === packet.toolchain.bendVersion
         ? undefined

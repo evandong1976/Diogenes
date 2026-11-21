@@ -3,9 +3,10 @@
  * objects through git alternates. Candidates become commits on the frozen base here, so the
  * developer's worktree, index and refs are never touched and candidates survive a restart.
  */
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, posix, resolve } from 'node:path'
 import { git } from './approval.ts'
+import { inScope } from '../coding/candidate.ts'
 import { minimalEnv } from '../verification/childEnv.ts'
 import type { CandidateBundle, CodingHandoff } from '../../shared/workflow'
 
@@ -23,12 +24,15 @@ export class CandidateRepo {
     const common = git(this.sourceRepo, ['rev-parse', '--git-common-dir']).trim()
     const objects = resolve(this.sourceRepo, common, 'objects')
     writeFileSync(join(this.dir, 'objects', 'info', 'alternates'), `${objects}\n`)
+    // A base fetched by SHA is shallow; borrow the boundary so git does not look for its parents.
+    const shallow = resolve(this.sourceRepo, common, 'shallow')
+    if (existsSync(shallow)) copyFileSync(shallow, join(this.dir, 'shallow'))
   }
 
   /** Why the bundle cannot be this handoff's candidate, or undefined when it can. */
   check(
     bundle: CandidateBundle,
-    expected: Pick<CodingHandoff, 'handoffId' | 'approvalId' | 'baseCommit' | 'editableRoot'> & {
+    expected: Pick<CodingHandoff, 'handoffId' | 'approvalId' | 'baseCommit' | 'editable'> & {
       runId: string
     }
   ): string | undefined {
@@ -36,12 +40,11 @@ export class CandidateRepo {
       if (bundle[key] !== expected[key])
         return `Candidate ${key} ${bundle[key]} does not match the expected ${expected[key]}`
     if (!bundle.files.length && !bundle.deleted.length) return 'Candidate changes no files'
-    const prefix = `${expected.editableRoot}/`
     for (const path of [...bundle.files.map((f) => f.path), ...bundle.deleted]) {
       if (isAbsolute(path) || posix.normalize(path) !== path || path.split('/').includes('..'))
         return `Candidate path ${path} is not a normalized repository path`
-      if (!path.startsWith(prefix))
-        return `Candidate changes ${path}, outside the approved ${expected.editableRoot}/`
+      if (!inScope(path, expected.editable))
+        return `Candidate changes ${path}, outside the approved ${expected.editable.join(', ')}`
     }
     return undefined
   }

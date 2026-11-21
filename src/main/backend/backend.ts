@@ -29,6 +29,7 @@ import { assertMigrated, migrate, SCHEMA_VERSION } from '../persistence/migratio
 import { PgThreadStore } from '../persistence/threads'
 import { PgWorkflowStore, verdictId } from '../persistence/workflow'
 import { ManagedCodingAdapter } from './coding'
+import type { RepoSource } from './repos'
 import { StoredThreadHistory, StoredWorkflowSink } from './threads'
 import type { CatalogGraph } from '../../shared/catalog'
 import type { CodingRunSummary, CodingRunView } from '../../shared/codingRun'
@@ -76,7 +77,11 @@ export interface BackendOptions {
   /** Built lazily on the first coding call, so a missing provider key only fails coding. */
   codingProvider: () => ManagedAgentProvider
   exportScript: string
-  repoFor(projectId: string): string
+  /**
+   * Local git copies of the authorized repositories. The base commit of every approval is fetched
+   * into it on demand, so no local clone has to be configured.
+   */
+  repos: RepoSource
   verifiers: LocalVerifier[]
   /** Apply pending migrations on open instead of requiring `pnpm db:migrate` first. */
   migrate?: boolean
@@ -152,11 +157,11 @@ export class AgentBackend implements BackendApi {
     this.workflowService = new WorkflowService({
       storeDir: join(options.dataDir, 'workflow'),
       store: stores.workflow,
-      repoFor: options.repoFor,
+      repoFor: (projectId) => options.repos.dir(projectId),
       gateway: new ManagedCodingAdapter({
         gateway: lazyGateway(() => this.gateway()),
         store: stores.coding,
-        repoFor: options.repoFor
+        repoFor: (projectId) => options.repos.dir(projectId)
       }),
       threads: new StoredWorkflowSink(stores.threads),
       verifiers: options.verifiers,
@@ -230,7 +235,8 @@ export class AgentBackend implements BackendApi {
         return runs.map(summarize)
       },
       status: async (projectId, runId) => this.gateway().status(await this.runIn(projectId, runId)),
-      retry: async (projectId, runId) => this.gateway().retry(await this.runIn(projectId, runId))
+      retry: async (projectId, runId) => this.gateway().retry(await this.runIn(projectId, runId)),
+      cancel: async (projectId, runId) => this.gateway().cancel(await this.runIn(projectId, runId))
     }
   }
 
@@ -289,6 +295,12 @@ export class AgentBackend implements BackendApi {
     if (!intent.baseGraph)
       return { design, approval: null, approvalError: 'The intent predates frozen baselines.' }
     try {
+      // The exact indexed commit of the authorized repository, fetched by SHA if not yet local.
+      await this.options.repos.ensure(
+        projectId,
+        access.repository.fullName,
+        intent.baseGraph.commit.sha
+      )
       const approval = await this.workflowService.approve({
         correlation: {
           projectId,
@@ -369,18 +381,25 @@ export class AgentBackend implements BackendApi {
   }
 
   private async approvalIn(projectId: string, approvalId: unknown): Promise<ApprovalRecord> {
-    await this.authorize(projectId)
+    const access = await this.authorize(projectId)
     const approval = await this.stores.workflow.approval(text(approvalId))
     if (!approval || approval.correlation.projectId !== projectId)
       throw new NotFoundError(`No approval ${String(approvalId)} in project ${projectId}.`)
+    await this.options.repos.ensure(
+      projectId,
+      access.repository.fullName,
+      approval.packet.baseCommit
+    )
     return approval
   }
 
+  /** Resolves a handoff inside the project and makes sure its base commit is local again. */
   private async handoffIn(projectId: string, handoffId: unknown): Promise<string> {
     await this.authorize(projectId)
     const h = await this.stores.workflow.handoff(text(handoffId))
     if (!h || h.correlation.projectId !== projectId)
       throw new NotFoundError(`No handoff ${String(handoffId)} in project ${projectId}.`)
+    await this.approvalIn(projectId, h.approvalId)
     return h.handoffId
   }
 

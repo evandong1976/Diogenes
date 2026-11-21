@@ -1,0 +1,8 @@
+{
+  "name": "orders-app",
+  "private": true,
+  "main": "src/main.ts",
+  "devDependencies": {
+    "electron": "1.0.0"
+  }
+}

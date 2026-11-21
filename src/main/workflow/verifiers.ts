@@ -9,6 +9,9 @@ import {
   verifyRefundRetry,
   type VerificationReport
 } from '../verification/refundRetry.ts'
+import { verifyCatalogChange } from '../verification/catalogConformance.ts'
+import { CATALOG_VERIFIER_ID } from './catalogApproval.ts'
+import { editableScope } from '../../shared/workflow'
 import type { RetryBehavior } from '../../shared/catalog'
 import type {
   ApprovedChange,
@@ -26,11 +29,16 @@ export interface LocalVerifier {
     packetPath: string
     trustedDigest: string
     candidate: string
-  }): VerificationReport
+  }): VerificationReport | Promise<VerificationReport>
 }
 
 export function refundRetryVerifier(bend: string = pinnedBend()): LocalVerifier {
   return { id: VERIFIER_ID, verify: (input) => verifyRefundRetry({ ...input, bend }) }
+}
+
+/** Type check plus re-index of the exact candidate, for any non-refund catalog change. */
+export function catalogVerifier(): LocalVerifier {
+  return { id: CATALOG_VERIFIER_ID, verify: (input) => verifyCatalogChange(input) }
 }
 
 export type VerdictContext = Pick<
@@ -59,7 +67,7 @@ export function toVerdict(
         unknownReason: 'inconclusive',
         scope: o.scope,
         tool: verifier,
-        target: packet.bindings.root,
+        target: editableScope(packet).join(', '),
         evidence: { ran: false },
         diagnostic: report.reason
       }))
@@ -67,12 +75,15 @@ export function toVerdict(
   if (report.packetDigest !== ctx.approvalId || report.candidateSha !== ctx.candidateId)
     throw new Error('Verifier report does not name the expected approval and candidate')
   const obligations = report.obligations.map((r): ObligationVerdict => {
+    const stated = r.evidence.unknownReason as UnknownReason | undefined
     const unknownReason: UnknownReason | undefined =
       r.outcome !== 'unknown'
         ? undefined
-        : !r.evidence.ran || UNAVAILABLE.test(r.diagnostic ?? '')
-          ? 'unavailable'
-          : 'inconclusive'
+        : stated
+          ? stated
+          : !r.evidence.ran || UNAVAILABLE.test(r.diagnostic ?? '')
+            ? 'unavailable'
+            : 'inconclusive'
     return {
       id: r.id,
       outcome: r.outcome,
@@ -99,17 +110,20 @@ export function unsupportedVerdict(packet: ApprovedChange, ctx: VerdictContext):
       unknownReason: 'unsupported',
       scope: o.scope,
       tool: 'none',
-      target: packet.bindings.root,
+      target: editableScope(packet).join(', '),
       evidence: { ran: false },
       diagnostic: `No local verifier is registered for ${verifier}`
     }))
   }
 }
 
-/** Failing obligations, each tied to the approved transitions its diagnostic names. */
-export function mismatchesOf(verdict: Verdict, behavior: RetryBehavior): Mismatch[] {
+/**
+ * Failing obligations, each tied to the approved transitions its diagnostic names. Without a
+ * state machine behavior (a catalog change) the diagnostic lines are kept and name no transition.
+ */
+export function mismatchesOf(verdict: Verdict, behavior: RetryBehavior | null): Mismatch[] {
   const rows = new Map(
-    behavior.transitions.map((t) => [`${t.from}/${retryEventKey(t.event)}`, t.id])
+    (behavior?.transitions ?? []).map((t) => [`${t.from}/${retryEventKey(t.event)}`, t.id])
   )
   return verdict.obligations
     .filter((o) => o.outcome === 'fail')

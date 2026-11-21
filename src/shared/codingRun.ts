@@ -50,8 +50,18 @@ export interface StartCodingRun {
  * - `idle`: the latest turn finished. The run can take a follow-up; see `candidate`.
  * - `failed`: the start was rejected or its turn failed. A failed follow-up returns to `idle`.
  * - `expired`: the provider no longer has the interaction or environment. The workspace is gone.
+ * - `cancelled`: the developer cancelled the run. `cancellation` says what the provider confirmed.
  */
-export type CodingRunPhase = 'starting' | 'uncertain' | 'running' | 'idle' | 'failed' | 'expired'
+export type CodingRunPhase =
+  'starting' | 'uncertain' | 'running' | 'idle' | 'failed' | 'expired' | 'cancelled'
+
+/** See `CancelOutcome` in workflow.ts; the same values, recorded on the run. */
+export interface RunCancellation {
+  outcome: 'confirmed' | 'requested' | 'finished' | 'not-running' | 'unconfirmed'
+  requestedAt: string
+  interactionId?: string
+  detail: string
+}
 
 export interface CodingRunTurn {
   /** 0 is the start; each follow-up adds one. */
@@ -60,7 +70,13 @@ export interface CodingRunTurn {
   /** The developer's direction for a follow-up. The start turn carries the handoff instead. */
   message?: string
   /** Each provider create request for this turn. More than one means it was retried on request. */
-  attempts: { requestedAt: string; interactionId?: string; error?: string }[]
+  attempts: {
+    requestedAt: string
+    interactionId?: string
+    error?: string
+    /** Set on an explicit resend after an uncertain attempt: the earlier one may also exist. */
+    mayDuplicate?: boolean
+  }[]
   interactionId?: string
   providerStatus?: string
   /** Passed to the export script so a candidate from an earlier turn is not mistaken for this one. */
@@ -121,8 +137,10 @@ export interface CodingRunView {
   environmentId?: string
   turns: CodingRunTurn[]
   activity: CodingActivity[]
+  /** The latest turn's candidate. Reset when a follow-up starts, so it is never stale. */
   candidate: CandidateState
   context?: CodingHandoff['context']
+  cancellation?: RunCancellation
 }
 
 export type CodingRunSummary = Pick<
@@ -139,8 +157,13 @@ export interface CodingRunApi {
   reopen(runId: string): Promise<CodingRunView>
   /** Directs the same managed workspace. Only allowed when the run is `idle`. */
   followUp(runId: string, message: string): Promise<CodingRunView>
-  /** Resends the latest turn of an `uncertain` run. Never called automatically. */
+  /**
+   * Resends the latest turn of an `uncertain` run. Never called automatically. The provider has
+   * no idempotency key, so the resend is recorded with `mayDuplicate`.
+   */
   retry(runId: string): Promise<CodingRunView>
+  /** Asks the provider to stop the running turn and records what it confirmed. */
+  cancel(runId: string): Promise<CodingRunView>
   list(): Promise<CodingRunSummary[]>
 }
 
@@ -150,5 +173,6 @@ export const codingRunChannels = {
   reopen: 'coding-run:reopen',
   followUp: 'coding-run:follow-up',
   retry: 'coding-run:retry',
+  cancel: 'coding-run:cancel',
   list: 'coding-run:list'
 } as const

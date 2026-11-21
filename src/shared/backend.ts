@@ -73,10 +73,16 @@ export interface BackendApi {
   workflow: {
     preview(request: Pick<ApprovalRequest, 'baseline' | 'patch'>): Promise<CatalogPatchResult>
     getProject(projectId: string): Promise<ProjectWorkflowState>
+    /** Idempotent: returns the open handoff of this approval instead of starting another run. */
     startHandoff(projectId: string, approvalId: string): Promise<HandoffRecord>
     getHandoff(projectId: string, handoffId: string): Promise<HandoffRecord | null>
     refresh(projectId: string, handoffId: string): Promise<HandoffRecord>
+    /**
+     * Directs the coding agent in the same managed workspace once its current turn has ended.
+     * Any open stage; the follow-up becomes a new attempt with its own candidate and verdict.
+     */
     steer(projectId: string, handoffId: string, message: string): Promise<HandoffRecord>
+    /** Cancels the running turn at the provider. The decision records the confirmed outcome. */
     cancel(projectId: string, handoffId: string): Promise<HandoffRecord>
     requestCorrection(
       projectId: string,
@@ -94,8 +100,10 @@ export interface BackendApi {
   coding: {
     list(projectId: string): Promise<CodingRunSummary[]>
     status(projectId: string, runId: string): Promise<CodingRunView>
-    /** Resends the latest turn of an `uncertain` run. Never automatic. */
+    /** Resends the latest turn of an `uncertain` run. Never automatic; marked `mayDuplicate`. */
     retry(projectId: string, runId: string): Promise<CodingRunView>
+    /** Asks the provider to stop the running turn; `cancellation` says what it confirmed. */
+    cancel(projectId: string, runId: string): Promise<CodingRunView>
   }
 }
 
@@ -123,5 +131,6 @@ export const backendChannels = {
   workflowVerdicts: 'backend:workflow:verdicts',
   codingList: 'backend:coding:list',
   codingStatus: 'backend:coding:status',
-  codingRetry: 'backend:coding:retry'
+  codingRetry: 'backend:coding:retry',
+  codingCancel: 'backend:coding:cancel'
 } as const

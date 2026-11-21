@@ -24,13 +24,14 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { createBackend, type AgentBackend } from '../../src/main/backend/backend'
+import { GitMirror } from '../../src/main/backend/repos'
 import type { ModelClient, Part } from '../../src/main/design/model'
 import { openDatabase } from '../../src/main/persistence/db'
 import { PgCodingRunStore } from '../../src/main/persistence/coding'
 import { PgThreadStore } from '../../src/main/persistence/threads'
 import { refundRetryVerifier } from '../../src/main/workflow/verifiers'
 import type { CatalogGraph } from '../../src/shared/catalog'
-import type { ApprovedChange } from '../../src/shared/workflow'
+import type { RetryApprovedChange } from '../../src/shared/workflow'
 import { FakeProvider, FakeServer, type AgentTurn } from '../coding/fakeProvider'
 
 const configured = !!process.env.DIOGENES_DATABASE_URL?.trim()
@@ -38,7 +39,7 @@ const reopenManifest = process.env.DIOGENES_SMOKE_REOPEN
 const thisFile = fileURLToPath(import.meta.url)
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 const root = 'fixtures/refund-retry'
-const handFrozen: ApprovedChange = JSON.parse(
+const handFrozen: RetryApprovedChange = JSON.parse(
   readFileSync(join(repoRoot, 'fixtures/refund-retry-approval/packet.json'), 'utf8')
 )
 const exportScript = readFileSync(join(repoRoot, 'src/main/coding/export-candidate.mjs'), 'utf8')
@@ -123,8 +124,9 @@ function backend(
   m: { projectId: string; repoDir: string; baseline?: CatalogGraph },
   server: FakeServer
 ): Promise<AgentBackend> {
+  const dataDir = mkdtempSync(join(tmpdir(), 'dg-smoke-data-'))
   return createBackend({
-    dataDir: mkdtempSync(join(tmpdir(), 'dg-smoke-data-')),
+    dataDir,
     authorizer: {
       async authorize(projectId) {
         if (projectId !== m.projectId) throw new Error(`Not authorized for ${projectId}`)
@@ -141,7 +143,11 @@ function backend(
     readSource: async () => null,
     codingProvider: () => new FakeProvider(server),
     exportScript,
-    repoFor: () => m.repoDir,
+    // The scratch repository stands in for GitHub; the base is fetched from it by SHA.
+    repos: new GitMirror({
+      root: join(dataDir, 'repos'),
+      remoteUrl: () => `file://${m.repoDir}`
+    }),
     verifiers: [refundRetryVerifier()],
     migrate: true
   })

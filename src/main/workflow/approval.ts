@@ -22,7 +22,13 @@ import type {
   RetryEffect,
   RetryTransition
 } from '../../shared/catalog'
-import type { ApprovalRequest, ApprovedChange, SourceContext } from '../../shared/workflow'
+import type {
+  ApprovalRequest,
+  ApprovedChange,
+  RetryApprovedChange,
+  SourceContext
+} from '../../shared/workflow'
+import { freezeCatalog } from './catalogApproval.ts'
 
 const BEND_VERSION = 'bend 2.0.40'
 const PROOF_FILE = 'PROOF.bend'
@@ -45,28 +51,55 @@ export interface FrozenApproval {
 }
 
 export function freezeApproval(repoDir: string, request: ApprovalRequest): FrozenApproval {
-  const { baseline, patch, correlation } = request
+  const { baseline, correlation } = request
   const base = baseline.commit.sha
   if (String(baseline.repository.id) !== correlation.projectId)
     throw new ApprovalError(
       `Proposal is for project ${correlation.projectId}, baseline is ${baseline.repository.id}`
     )
+  if (!/^[0-9a-f]{40}$/.test(base))
+    throw new ApprovalError(`Baseline commit ${base} is not a full commit SHA`)
   if (git(repoDir, ['rev-parse', '--verify', `${base}^{commit}`]).trim() !== base)
     throw new ApprovalError(`Base ${base} is not a full commit SHA in ${repoDir}`)
 
   const preview = previewProposal(request)
   if (!preview.ok) throw new ApprovalError(`Proposal does not apply: ${preview.issue.message}`)
-  const targets = new Set(patch.operations.map((op) => (op.type === 'update' ? op.node.id : '')))
+  const target = retryTarget(request, preview.graph)
+  return target
+    ? freezeRetry(repoDir, request, preview.graph, target)
+    : freezeCatalog(repoDir, request, preview.graph)
+}
+
+/**
+ * The refund proof path applies to one update of a single state machine that has an executable
+ * behavior and Bend/TypeScript bindings. Anything else is a general catalog change.
+ */
+function retryTarget(request: ApprovalRequest, after: CatalogGraph): string | null {
+  const targets = new Set(
+    request.patch.operations.map((op) => (op.type === 'update' ? op.node.id : ''))
+  )
   const target = [...targets][0]
-  if (targets.size !== 1 || !target)
-    throw new ApprovalError(
-      'Local verification supports one update to a single state machine. This proposal needs a different verifier.'
-    )
+  if (targets.size !== 1 || !target) return null
+  const node = after.nodes.find((n) => n.id === target)
+  if (node?.kind !== 'stateMachine' || !node.properties.behavior) return null
+  const bound = (ext: string): boolean => node.sources.some((s) => s.path.endsWith(ext) && s.field)
+  return bound('.bend') && bound('.ts') ? target : null
+}
+
+function freezeRetry(
+  repoDir: string,
+  request: ApprovalRequest,
+  graph: CatalogGraph,
+  target: string
+): FrozenApproval {
+  const { baseline, patch, correlation } = request
+  const base = baseline.commit.sha
+  const preview = { graph }
   const before = behaviorOf(baseline, target)
   const after = behaviorOf(preview.graph, target)
   const bindings = bindingsOf(preview.graph, target)
 
-  const packet: ApprovedChange = {
+  const packet: RetryApprovedChange = {
     version: 1,
     repository: baseline.repository,
     baseCommit: base,
@@ -134,7 +167,7 @@ function behaviorOf(graph: CatalogGraph, id: string): RetryBehavior {
   return node.properties.behavior
 }
 
-function bindingsOf(graph: CatalogGraph, id: string): ApprovedChange['bindings'] {
+function bindingsOf(graph: CatalogGraph, id: string): RetryApprovedChange['bindings'] {
   const node = graph.nodes.find((n) => n.id === id)!
   const find = (ext: string): { path: string; field: string } => {
     const source = node.sources.find((s) => s.path.endsWith(ext) && s.field)
@@ -163,7 +196,7 @@ const rowText = (t: RetryTransition): string =>
 function describeChange(
   before: RetryBehavior,
   after: RetryBehavior
-): Pick<ApprovedChange, 'requiredChanges' | 'preserved'> {
+): Pick<RetryApprovedChange, 'requiredChanges' | 'preserved'> {
   const old = new Map(before.transitions.map((t) => [t.id, t]))
   const required = [
     ...after.states.filter((s) => !before.states.includes(s)).map((s) => `add state ${s}`),

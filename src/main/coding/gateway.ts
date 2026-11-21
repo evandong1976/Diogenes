@@ -76,20 +76,65 @@ export class CodingRunGateway implements CodingRunApi {
   async status(runId: string): Promise<CodingRunView> {
     return this.withRun(runId, async (run) => {
       if (run.phase === 'running') await this.refresh(run)
+      else if (run.phase === 'starting' && !this.inflight.has(runId)) this.orphaned(run)
+      else if (run.phase === 'cancelled' && run.cancellation?.outcome === 'requested')
+        await this.confirmCancel(run)
+      return run
+    })
+  }
+
+  /**
+   * Asks the provider to stop the latest turn, then reads it back so the recorded outcome is what
+   * the provider confirmed. A create still in flight is awaited first, so its interaction ID is
+   * known. The run takes no further turns afterwards.
+   */
+  async cancel(runId: string): Promise<CodingRunView> {
+    await this.settle(runId)
+    return this.withRun(runId, async (run) => {
+      if (run.phase === 'cancelled') return run
+      const turn = latest(run)
+      const requestedAt = this.stamp()
+      const id = turn.interactionId
+      if (run.phase === 'starting' && !this.inflight.has(runId)) this.orphaned(run)
+      if (run.phase !== 'running' && run.phase !== 'uncertain') {
+        run.cancellation = {
+          outcome: 'not-running',
+          requestedAt,
+          ...(id && { interactionId: id }),
+          detail: `No turn was running (the run was ${run.phase}).`
+        }
+      } else if (!id) {
+        run.cancellation = {
+          outcome: 'unconfirmed',
+          requestedAt,
+          detail:
+            'The provider never returned an interaction ID for this turn, so it cannot be cancelled. Remote work may exist.'
+        }
+      } else {
+        run.cancellation = { outcome: 'requested', requestedAt, interactionId: id, detail: '' }
+        let failure: string | undefined
+        try {
+          await this.options.provider.cancel(id)
+        } catch (error) {
+          if (!(error instanceof ProviderError && error.kind === 'gone'))
+            failure = (error as Error).message
+        }
+        // Read the turn back either way: a rejected cancel may mean it had already finished.
+        await this.confirmCancel(run)
+        if (failure && run.cancellation.outcome === 'requested') {
+          run.cancellation.outcome = 'unconfirmed'
+          run.cancellation.detail = `The cancel request failed (${failure}); remote work may still be running.`
+        }
+      }
+      run.phase = 'cancelled'
       return run
     })
   }
 
   async reopen(runId: string): Promise<CodingRunView> {
     return this.withRun(runId, async (run) => {
-      const turn = latest(run)
-      const attempt = turn.attempts.at(-1)
       if (run.phase === 'starting' && !this.inflight.has(runId)) {
-        // The app stopped between saving the attempt and hearing back from the provider.
-        if (attempt && !attempt.interactionId && !attempt.error) {
-          attempt.error = 'Diogenes stopped before the provider replied.'
-        }
-        run.phase = 'uncertain'
+        this.orphaned(run)
       } else if (run.phase === 'running') {
         await this.refresh(run)
       } else if (run.phase === 'idle' && run.environmentId) {
@@ -108,19 +153,34 @@ export class CodingRunGateway implements CodingRunApi {
       if (run.phase !== 'idle') {
         throw new Error(`The run is ${run.phase}; it can take direction once the turn finishes.`)
       }
+      if (!run.environmentId) throw new Error('The run has no workspace to continue.')
+      // An expired workspace cannot be continued; say so now instead of failing the send.
+      const env = await this.options.provider
+        .environmentStatus(run.environmentId)
+        .catch(() => 'active' as const)
+      if (env !== 'active') {
+        run.phase = 'expired'
+        return run
+      }
       const turn = newTurn(run.turns.length, 'follow_up')
       turn.message = message.trim()
       run.turns.push(turn)
+      run.candidate = { status: 'none' }
       run.phase = 'starting'
       return run
     })
+    if (view.phase === 'expired') throw new Error('The managed workspace has expired.')
     this.dispatch(runId)
     return view
   }
 
   async retry(runId: string): Promise<CodingRunView> {
     const view = await this.withRun(runId, async (run) => {
+      if (run.phase === 'starting' && !this.inflight.has(runId)) this.orphaned(run)
       if (run.phase !== 'uncertain') throw new Error(`Only an uncertain run can be retried.`)
+      // The provider has no idempotency key; the resend is marked as a possible duplicate.
+      if (latest(run).interactionId)
+        throw new Error('This turn already reached the provider; refresh it instead.')
       run.phase = 'starting'
       return run
     })
@@ -170,7 +230,10 @@ export class CodingRunGateway implements CodingRunApi {
     let request: CreateTurn | undefined
     await this.withRun(runId, async (run) => {
       const turn = latest(run)
-      turn.attempts.push({ requestedAt: this.stamp() })
+      turn.attempts.push({
+        requestedAt: this.stamp(),
+        ...(turn.attempts.length > 0 && { mayDuplicate: true })
+      })
       request = this.request(run, input, turn)
       return run
     })
@@ -255,6 +318,40 @@ export class CodingRunGateway implements CodingRunApi {
         'Keep the guarantees and path limits from the original task.',
         finish
       ].join('\n')
+    }
+  }
+
+  /** The app stopped between saving a turn and hearing back from the provider. */
+  private orphaned(run: CodingRunView): void {
+    const attempt = latest(run).attempts.at(-1)
+    if (attempt && !attempt.interactionId && !attempt.error)
+      attempt.error = 'Diogenes stopped before the provider replied.'
+    run.phase = 'uncertain'
+  }
+
+  /** Reads the cancelled turn back and records what the provider reports. */
+  private async confirmCancel(run: CodingRunView): Promise<void> {
+    const c = run.cancellation!
+    let interaction: ProviderInteraction
+    try {
+      interaction = await this.options.provider.get(c.interactionId!)
+    } catch (error) {
+      if (error instanceof ProviderError && error.kind === 'gone') {
+        c.outcome = 'confirmed'
+        c.detail = 'The provider no longer has the interaction.'
+      } else c.detail = 'Cancel sent; the provider has not confirmed it yet.'
+      return
+    }
+    latest(run).providerStatus = interaction.status
+    if (interaction.status === 'cancelled') {
+      c.outcome = 'confirmed'
+      c.detail = 'The provider reports the turn cancelled.'
+    } else if (isActive(interaction.status)) {
+      c.outcome = 'requested'
+      c.detail = `Cancel sent; the provider still reports ${interaction.status}.`
+    } else {
+      c.outcome = 'finished'
+      c.detail = `The turn had already ended (${interaction.status}) before the cancel took effect.`
     }
   }
 

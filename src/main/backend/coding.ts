@@ -6,8 +6,9 @@
  *   whose `digest` is the approval ID and whose scope is the approval's editable root.
  * - The gateway returns a `git diff` candidate; the workflow wants full file contents. The diff
  *   is applied to the base commit in a throwaway index of the local repository.
- * - The gateway has no remote cancel. `cancel` stops the workflow from using the run and says
- *   the provider was not asked to stop.
+ * - A steer is a follow-up turn in the same managed workspace, allowed once the current turn has
+ *   ended. Each turn has its own candidate; only the latest turn's candidate is retrievable.
+ * - `cancel` asks the provider to stop and reports the outcome it confirmed.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -47,7 +48,7 @@ export class ManagedCodingAdapter implements CodingGateway {
         intent: handoff.brief,
         guarantees: [],
         latitude: [],
-        scope: [handoff.editableRoot],
+        scope: handoff.editable,
         context: { threadId: handoff.correlation.threadId }
       },
       files: handoff.workspace.map((f) => ({ path: f.path, content: f.text }))
@@ -61,20 +62,13 @@ export class ManagedCodingAdapter implements CodingGateway {
   }
 
   async steer(runId: string, message: string): Promise<CodingRunSnapshot> {
-    const current = await this.deps.gateway.status(runId)
-    if (current.phase !== 'idle')
-      throw new Error(`Run ${runId} is ${current.phase}; steer it after the current turn ends.`)
     const view = await this.deps.gateway.followUp(runId, message)
     return snapshot(view, view.handoffDigest)
   }
 
   async cancel(runId: string): Promise<CodingRunSnapshot> {
-    const view = await this.deps.gateway.status(runId)
-    return {
-      ...snapshot(view, view.handoffDigest),
-      status: 'cancelled',
-      error: 'Cancelled in Diogenes. The managed agent was not asked to stop.'
-    }
+    const view = await this.deps.gateway.cancel(runId)
+    return snapshot(view, view.handoffDigest)
   }
 
   async retrieveCandidate(runId: string): Promise<CandidateBundle> {
@@ -84,6 +78,10 @@ export class ManagedCodingAdapter implements CodingGateway {
     const input = await this.deps.store.input(runId)
     if (!input) throw new Error(`Run ${runId} has no stored input.`)
     const { candidate } = view.candidate
+    if (candidate.provenance.turn !== view.turns.length - 1)
+      throw new Error(
+        `Run ${runId} candidate is from turn ${candidate.provenance.turn}, not the latest.`
+      )
     if (sha256(candidate.patch) !== candidate.patchSha256)
       throw new Error(`Run ${runId} candidate patch does not match its digest.`)
     const repo = this.deps.repoFor(String(input.handoff.repository.id))
@@ -147,6 +145,8 @@ function status(view: CodingRunView): RunStatus {
     case 'failed':
     case 'expired':
       return 'failed'
+    case 'cancelled':
+      return 'cancelled'
   }
 }
 
@@ -173,7 +173,9 @@ function snapshot(view: CodingRunView, approvalId: string): CodingRunSnapshot {
         ? 'The managed workspace expired.'
         : view.phase === 'uncertain'
           ? 'The provider request may not have arrived; retry the coding run explicitly.'
-          : latest?.error
+          : view.phase === 'cancelled'
+            ? `Cancelled (${view.cancellation?.outcome}): ${view.cancellation?.detail}`
+            : latest?.error
   return {
     runId: view.runId,
     handoffId: view.handoffId,
@@ -181,6 +183,9 @@ function snapshot(view: CodingRunView, approvalId: string): CodingRunSnapshot {
     status: status(view),
     remoteStatus: latest?.providerStatus ?? view.phase,
     events,
+    turn: view.turns.length - 1,
+    reusable: view.phase === 'idle' && !!view.environmentId,
+    ...(view.cancellation && { cancellation: view.cancellation }),
     ...(error && { error })
   }
 }

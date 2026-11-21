@@ -81,6 +81,16 @@ export async function githubFetch(
   return res
 }
 
+/**
+ * HTTP header for git over https://github.com/ with the current session, for one git child
+ * process in this main process. Null when signed out.
+ */
+export async function githubGitAuthHeader(): Promise<string | null> {
+  const current = await loadToken()
+  if (!current) return null
+  return `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${current}`).toString('base64')}`
+}
+
 /** GET by default; passing a body makes it a JSON POST. */
 async function githubApi<T>(path: string, body?: unknown): Promise<T> {
   const res = await githubFetch(path, { body })

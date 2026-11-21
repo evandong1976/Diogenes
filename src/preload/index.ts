@@ -71,7 +71,8 @@ const backend: BackendApi = {
     getProject: (projectId) => invoke(b.designGetProject, projectId),
     startTurn: (input) => invoke(b.designStartTurn, input),
     cancelTurn: (projectId, turnId) => invoke(b.designCancelTurn, projectId, turnId),
-    reject: (projectId, proposalId, reason) => invoke(b.designReject, projectId, proposalId, reason),
+    reject: (projectId, proposalId, reason) =>
+      invoke(b.designReject, projectId, proposalId, reason),
     approve: (projectId, proposalId, expectedRevision) =>
       invoke(b.designApprove, projectId, proposalId, expectedRevision)
   },
@@ -93,7 +94,8 @@ const backend: BackendApi = {
   coding: {
     list: (projectId) => invoke(b.codingList, projectId),
     status: (projectId, runId) => invoke(b.codingStatus, projectId, runId),
-    retry: (projectId, runId) => invoke(b.codingRetry, projectId, runId)
+    retry: (projectId, runId) => invoke(b.codingRetry, projectId, runId),
+    cancel: (projectId, runId) => invoke(b.codingCancel, projectId, runId)
   }
 }
 

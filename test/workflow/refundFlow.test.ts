@@ -17,17 +17,17 @@ import { refundRetryVerifier } from '../../src/main/workflow/verifiers'
 import { WorkflowService } from '../../src/main/workflow/service'
 import type { CatalogGraph, CatalogPatch } from '../../src/shared/catalog'
 import type {
-  ApprovedChange,
   CandidateBundle,
   CandidateFile,
   CodingHandoff,
-  WorkflowCorrelation
+  WorkflowCorrelation,
+  RetryApprovedChange
 } from '../../src/shared/workflow'
 import { FakeGateway, FakeThreads } from './fakes'
 
 const repoDir = fileURLToPath(new URL('../..', import.meta.url))
 const root = 'fixtures/refund-retry'
-const handFrozen: ApprovedChange = JSON.parse(
+const handFrozen: RetryApprovedChange = JSON.parse(
   readFileSync(join(repoDir, 'fixtures/refund-retry-approval/packet.json'), 'utf8')
 )
 const base = handFrozen.baseCommit
@@ -120,19 +120,19 @@ describe.runIf(proofsReady)('refund workflow with local proofs', () => {
     expect(await service.approve(request)).toEqual(approval)
     for (const key of ['beforeDigest', 'afterDigest', 'transitionIds'] as const)
       expect(approval.packet[key]).toEqual(handFrozen[key])
-    expect(approval.packet.toolchain.lawSourceDigest).toBe(handFrozen.toolchain.lawSourceDigest)
+    expect((approval.packet as RetryApprovedChange).toolchain.lawSourceDigest).toBe(
+      handFrozen.toolchain.lawSourceDigest
+    )
     expect(approval.packet.correlation).toEqual(correlation)
 
-    // Hand off and steer. The gateway receives the frozen intent and base context.
+    // Hand off. The gateway receives the frozen intent and base context.
     let h = await service.startHandoff(approval.approvalId)
     expect(gateway.submitted[0]).toMatchObject({
       approvalId: approval.approvalId,
       baseCommit: base,
-      editableRoot: root
+      editable: [root]
     })
     expect(gateway.submitted[0].brief).toContain('attempt.2.failed')
-    h = await service.steer(h.handoffId, 'Keep the caller change minimal.')
-    expect(h.runs[0].run.events.at(-1)).toMatchObject({ kind: 'steer' })
 
     // The run says it completed. The local verdict fails it anyway.
     h = await service.refresh(h.handoffId)

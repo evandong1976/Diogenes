@@ -170,7 +170,6 @@ export class PgThreadStore implements ThreadRepository {
           `Thread ${threadId} is at seq ${row.last_seq}, expected ${options.expectedLastSeq}.`
         )
       for (const e of added) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { id, seq, at, ...body } = e
         await q.query(
           `insert into private.dg_thread_events (project_id, thread_id, seq, event_id, body, at)

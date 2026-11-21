@@ -6,10 +6,11 @@
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import { ApprovalError, freezeApproval, previewProposal } from './approval.ts'
-import { codingBrief } from './brief.ts'
+import { codingBrief, correctionBrief, steerBrief } from './brief.ts'
 import { CandidateRepo } from './candidates.ts'
 import { WorkflowStore, type WorkflowRepository } from './store.ts'
 import { mismatchesOf, toVerdict, unsupportedVerdict, type LocalVerifier } from './verifiers.ts'
+import { editableScope } from '../../shared/workflow'
 import type { CatalogPatchResult, RetryBehavior } from '../../shared/catalog'
 import type {
   ApprovalRecord,
@@ -23,6 +24,7 @@ import type {
   HandoffRecord,
   ProjectWorkflowState,
   RunRecord,
+  CodingRunSnapshot,
   ThreadMessage,
   Verdict,
   WorkflowApi
@@ -81,9 +83,21 @@ export class WorkflowService implements WorkflowApi {
     return this.store.putApproval(record, frozen.bytes)
   }
 
-  async startHandoff(approvalId: string): Promise<HandoffRecord> {
+  /**
+   * Starts the coding effort for an approval. Idempotent: while a handoff for this approval is
+   * open, the same handoff is returned instead of starting a second managed run.
+   */
+  startHandoff(approvalId: string): Promise<HandoffRecord> {
+    return this.locked(`approval:${approvalId}`, () => this.startOnce(approvalId))
+  }
+
+  private async startOnce(approvalId: string): Promise<HandoffRecord> {
     const approval = await this.store.approval(approvalId)
     if (!approval) throw new WorkflowError(`Unknown approval ${approvalId}`)
+    const open = (await this.store.projectHandoffs(approval.correlation.projectId)).find(
+      (h) => h.approvalId === approvalId && h.stage !== 'closed'
+    )
+    if (open) return open
     const now = this.now()
     const handoff: HandoffRecord = {
       handoffId: `hof-${randomBytes(8).toString('hex')}`,
@@ -124,25 +138,46 @@ export class WorkflowService implements WorkflowApi {
     })
   }
 
+  /**
+   * Directs the coding agent in the same managed workspace. Allowed in any open stage once the
+   * current turn has ended; a turn that just ended is collected and verified first, so its
+   * candidate is never skipped. The follow-up turn becomes a new attempt of this handoff.
+   */
   steer(handoffId: string, message: string): Promise<HandoffRecord> {
     return this.locked(handoffId, async () => {
-      const h = await this.requireStage(handoffId, 'coding')
-      const run = h.runs.at(-1)!
-      run.run = await this.deps.gateway.steer(run.run.runId, message)
-      return this.save(h)
+      let h = await this.require(handoffId)
+      if (!message.trim()) throw new WorkflowError('A steer needs a message')
+      if (h.stage === 'closed') throw new WorkflowError(`Handoff ${handoffId} is closed`)
+      const last = h.runs.at(-1)!
+      if (h.stage === 'coding') {
+        last.run = await this.deps.gateway.get(last.run.runId)
+        if (last.run.status === 'completed') h = await this.collect(h, last)
+      }
+      if (h.stage === 'verifying')
+        throw new WorkflowError(`Handoff ${handoffId} is verifying; refresh it first`)
+      const { packet } = (await this.store.approval(h.approvalId))!
+      return this.continueRun(h, 'steer', steerBrief(packet, message.trim()), {
+        steer: message.trim()
+      })
     })
   }
 
+  /**
+   * Asks the provider to stop the running turn. The decision records what the provider
+   * confirmed; a retry is only offered once the remote work is known to have stopped.
+   */
   cancel(handoffId: string): Promise<HandoffRecord> {
     return this.locked(handoffId, async () => {
       const h = await this.requireStage(handoffId, 'coding')
       const run = h.runs.at(-1)!
       run.run = await this.deps.gateway.cancel(run.run.runId)
-      return this.decide(h, 'run-failed', 'Cancelled by the developer', [
-        'retry-run',
-        'revise-design',
-        'close'
-      ])
+      const c = run.run.cancellation
+      return this.decide(
+        h,
+        'run-failed',
+        `Cancelled by the developer. Provider outcome: ${c?.outcome ?? 'unknown'}. ${c?.detail ?? ''}`.trim(),
+        ['retry-run', 'revise-design', 'close']
+      )
     })
   }
 
@@ -166,12 +201,23 @@ export class WorkflowService implements WorkflowApi {
       const mismatches = mismatchesOf(verdict, await this.behavior(h)).filter((m) =>
         request.obligationIds.includes(m.obligationId)
       )
-      return this.submitRun(h, {
+      const correction: CorrectionRequest = {
         obligationIds: request.obligationIds,
         instructions: request.instructions.trim(),
         previousCandidateId: verdict.candidateId,
         mismatches
-      })
+      }
+      if (this.attemptsUsed(h) >= h.maxAttempts)
+        throw new WorkflowError(`Handoff ${h.handoffId} used all ${h.maxAttempts} attempts`)
+      // Continue the same workspace when it is still there; otherwise start a fresh run.
+      last.run = await this.deps.gateway.get(last.run.runId)
+      if (last.run.reusable) {
+        const { packet } = (await this.store.approval(h.approvalId))!
+        return this.continueRun(h, 'correction', correctionBrief(packet, correction), {
+          correction
+        })
+      }
+      return this.submitRun(h, correction)
     })
   }
 
@@ -187,8 +233,18 @@ export class WorkflowService implements WorkflowApi {
           if (!last.candidate) throw new WorkflowError('There is no candidate to verify again')
           h.stage = 'verifying'
           return this.verify(await this.save(h), last)
-        case 'retry-run':
-          return this.submitRun(h)
+        case 'retry-run': {
+          // The provider has no idempotency key: never start a second run while the first may
+          // still be working remotely.
+          last.run = await this.deps.gateway.get(last.run.runId)
+          const busy = stillRunning(last.run)
+          if (busy) {
+            h.decision = (await this.require(handoffId)).decision
+            await this.save(h)
+            throw new WorkflowError(busy)
+          }
+          return this.submitRun(h, undefined, 'retry')
+        }
         case 'revise-design':
         case 'close':
           h.stage = 'closed'
@@ -211,11 +267,41 @@ export class WorkflowService implements WorkflowApi {
 
   // ------------------------------------------------------------------ internals
 
+  /** Corrections and fresh runs count toward `maxAttempts`; developer steers do not. */
+  private attemptsUsed(h: HandoffRecord): number {
+    return h.runs.filter((r) => r.origin !== 'steer').length
+  }
+
+  /** A follow-up turn in the last run's managed workspace, recorded as a new attempt. */
+  private async continueRun(
+    h: HandoffRecord,
+    origin: 'steer' | 'correction',
+    message: string,
+    extra: Pick<RunRecord, 'steer' | 'correction'>
+  ): Promise<HandoffRecord> {
+    const last = h.runs.at(-1)!
+    const run = await this.deps.gateway.steer(last.run.runId, message)
+    const attempt = h.runs.length + 1
+    h.runs.push({ attempt, origin, run, ...extra })
+    h.stage = 'coding'
+    h.decision = undefined
+    await this.save(h)
+    await this.post(h, {
+      kind: 'run',
+      handoffId: h.handoffId,
+      runId: run.runId,
+      status: run.status,
+      detail: `${origin} turn ${run.turn ?? ''} in the same workspace`.trim()
+    })
+    return h
+  }
+
   private async submitRun(
     h: HandoffRecord,
-    correction?: CorrectionRequest
+    correction?: CorrectionRequest,
+    origin: RunRecord['origin'] = correction ? 'correction' : 'start'
   ): Promise<HandoffRecord> {
-    if (h.runs.length >= h.maxAttempts)
+    if (this.attemptsUsed(h) >= h.maxAttempts)
       throw new WorkflowError(`Handoff ${h.handoffId} used all ${h.maxAttempts} attempts`)
     const { packet } = (await this.store.approval(h.approvalId))!
     const attempt = h.runs.length + 1
@@ -228,13 +314,14 @@ export class WorkflowService implements WorkflowApi {
       baseCommit: packet.baseCommit,
       brief: codingBrief(packet, correction),
       workspace: (packet.sourceContext ?? []).map(({ path, text }) => ({ path, text })),
-      editableRoot: packet.bindings.root,
+      editable: editableScope(packet),
       ...(correction && { correction })
     }
     const run = await this.deps.gateway.submit(handoff)
     if (run.handoffId !== h.handoffId || run.approvalId !== h.approvalId)
       throw new WorkflowError(`Gateway run ${run.runId} does not echo the handoff identity`)
-    h.runs.push({ attempt, run, ...(correction && { correction }) })
+    h.runs.push({ attempt, origin, run, ...(correction && { correction }) })
+    h.decision = undefined
     h.stage = 'coding'
     await this.save(h)
     await this.post(h, {
@@ -255,7 +342,7 @@ export class WorkflowService implements WorkflowApi {
       handoffId: h.handoffId,
       approvalId: h.approvalId,
       baseCommit: packet.baseCommit,
-      editableRoot: packet.bindings.root
+      editable: editableScope(packet)
     })
     if (problem) {
       run.candidateRejected = problem
@@ -288,7 +375,7 @@ export class WorkflowService implements WorkflowApi {
     const verdict: Verdict = verifier
       ? toVerdict(
           packet,
-          verifier.verify({
+          await verifier.verify({
             repoDir: this.candidates(h).dir,
             packetPath: await this.store.packetFile(h.approvalId),
             trustedDigest: h.approvalId,
@@ -300,7 +387,7 @@ export class WorkflowService implements WorkflowApi {
     run.verdict = verdict
 
     const failing = verdict.obligations.filter((o) => o.outcome === 'fail').map((o) => o.id)
-    const attemptsLeft = h.maxAttempts - h.runs.length
+    const attemptsLeft = h.maxAttempts - this.attemptsUsed(h)
     h.stage =
       verdict.overall === 'pass'
         ? 'accepted'
@@ -330,7 +417,7 @@ export class WorkflowService implements WorkflowApi {
       return this.decide(
         h,
         'attempts-exhausted',
-        `Still failing after ${h.runs.length} attempts: ${failing.join(', ')}`,
+        `Still failing after ${this.attemptsUsed(h)} attempts: ${failing.join(', ')}`,
         ['revise-design', 'close']
       )
     const open = verdict.obligations
@@ -349,7 +436,7 @@ export class WorkflowService implements WorkflowApi {
     detail: string,
     options: DecisionOption[]
   ): Promise<HandoffRecord> {
-    const attemptsLeft = h.runs.length < h.maxAttempts
+    const attemptsLeft = this.attemptsUsed(h) < h.maxAttempts
     h.decision = {
       kind: 'decision',
       handoffId: h.handoffId,
@@ -379,8 +466,11 @@ export class WorkflowService implements WorkflowApi {
     if (pending.length) await this.save(h)
   }
 
-  private async behavior(h: HandoffRecord): Promise<RetryBehavior> {
-    const op = (await this.store.approval(h.approvalId))!.packet.patch.operations[0]
+  /** The approved state machine behavior of a refund-path approval; null for catalog changes. */
+  private async behavior(h: HandoffRecord): Promise<RetryBehavior | null> {
+    const { packet } = (await this.store.approval(h.approvalId))!
+    if (packet.kind === 'catalog') return null
+    const op = packet.patch.operations[0]
     if (op.type !== 'update' || op.node.kind !== 'stateMachine' || !op.node.properties.behavior)
       throw new WorkflowError('Approval has no state machine behavior')
     return op.node.properties.behavior
@@ -428,4 +518,14 @@ export class WorkflowService implements WorkflowApi {
     )
     return next
   }
+}
+
+/** Why another run must not start yet, or undefined when the last one is known to have stopped. */
+function stillRunning(run: CodingRunSnapshot): string | undefined {
+  if (run.status === 'queued' || run.status === 'running')
+    return `Run ${run.runId} may still be working remotely (${run.remoteStatus}); cancel it or wait before retrying.`
+  const outcome = run.cancellation?.outcome
+  if (outcome === 'requested' || outcome === 'unconfirmed')
+    return `The provider has not confirmed run ${run.runId} stopped (${outcome}); refresh before retrying.`
+  return undefined
 }

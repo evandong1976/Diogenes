@@ -1,4 +1,6 @@
 import { spawn } from 'child_process'
+import { tmpdir } from 'os'
+import { minimalEnv } from '../verification/childEnv'
 import { existsSync, readFileSync, realpathSync } from 'fs'
 import { readFile, readdir, writeFile } from 'fs/promises'
 import { createRequire } from 'module'
@@ -70,8 +72,8 @@ export function runScipTypescript(opts: {
     ...(opts.inferTsconfig ? ['--infer-tsconfig'] : []),
     ...opts.projects
   ]
-  const env: NodeJS.ProcessEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
-  delete env.NODE_OPTIONS
+  // Indexed code is untrusted: the analyzer inherits no credentials (database, Gemini, GitHub).
+  const env = minimalEnv({ ELECTRON_RUN_AS_NODE: '1', HOME: tmpdir() })
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(process.execPath, args, {
       cwd: opts.root,

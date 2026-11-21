@@ -271,7 +271,8 @@ export class ThreadStore implements ThreadRepository {
   }
 
   private threadPath(projectId: ProjectId, threadId: ThreadId): string {
-    if (typeof threadId !== 'string' || !THREAD_ID.test(threadId)) throw invalid('Invalid thread ID.')
+    if (typeof threadId !== 'string' || !THREAD_ID.test(threadId))
+      throw invalid('Invalid thread ID.')
     return join(this.projectDir(projectId), `${threadId}.json`)
   }
 }

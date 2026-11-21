@@ -8,9 +8,10 @@ import exportScript from '../coding/export-candidate.mjs?raw'
 import { createAntigravityProvider } from '../coding/antigravity'
 import { DESIGN_MODELS, githubSourceReader } from '../design'
 import { geminiModelClient } from '../design/model'
-import { getAuthorizedRepo, githubFetch, onSessionChange } from '../github'
+import { getAuthorizedRepo, githubFetch, githubGitAuthHeader, onSessionChange } from '../github'
 import { readIndexedGraph } from '../indexing/ipc'
-import { refundRetryVerifier } from '../workflow/verifiers'
+import { catalogVerifier, refundRetryVerifier } from '../workflow/verifiers'
+import { GitMirror } from './repos'
 import {
   createBackend,
   type AgentBackend,
@@ -104,13 +105,13 @@ async function openBackend(): Promise<AgentBackend> {
       return createAntigravityProvider({ apiKey })
     },
     exportScript,
-    // A local clone that contains the approved base commit.
-    repoFor: (projectId) => {
-      const dir = process.env.DIOGENES_WORKFLOW_REPO
-      if (!dir) throw new Error(`No local repository is configured for project ${projectId}.`)
-      return dir
-    },
-    verifiers: [refundRetryVerifier()],
+    // Base commits are fetched by SHA from the authorized GitHub repository with the session.
+    repos: new GitMirror({
+      root: join(app.getPath('userData'), 'backend', 'repos'),
+      remoteUrl: (fullName) => `https://github.com/${fullName}.git`,
+      authHeader: githubGitAuthHeader
+    }),
+    verifiers: [refundRetryVerifier(), catalogVerifier()],
     // Additive, versioned and advisory-locked, so every app start may apply pending migrations.
     migrate: true
   })
@@ -170,7 +171,8 @@ function registerHandlers(call: Call): void {
       backend.workflow.verdicts(p, h),
     [c.codingList]: (backend: AgentBackend, p: string) => backend.coding.list(p),
     [c.codingStatus]: (backend: AgentBackend, p: string, r: string) => backend.coding.status(p, r),
-    [c.codingRetry]: (backend: AgentBackend, p: string, r: string) => backend.coding.retry(p, r)
+    [c.codingRetry]: (backend: AgentBackend, p: string, r: string) => backend.coding.retry(p, r),
+    [c.codingCancel]: (backend: AgentBackend, p: string, r: string) => backend.coding.cancel(p, r)
   }
   for (const [channel, handler] of Object.entries(handlers)) {
     const run = call((backend: AgentBackend, ...args: unknown[]) =>
