@@ -5,3 +5,6 @@ LICENSE.md
 tsconfig.json
 tsconfig.*.json
 design
+.claude
+.agents
+skills-lock.json
