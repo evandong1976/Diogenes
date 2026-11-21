@@ -20,7 +20,7 @@ const gemini: DiogenesApi['gemini'] = {
   buildCurrentGraph: () => ipcRenderer.invoke(geminiChannels.buildCurrentGraph),
   useFixture: () => ipcRenderer.invoke(geminiChannels.useFixture),
   buildRepoGraph: (repo) => ipcRenderer.invoke(geminiChannels.buildRepoGraph, repo),
-  buildArchitecture: (repo) => ipcRenderer.invoke(geminiChannels.buildArchitecture, repo),
+  buildAppFlow: (repo) => ipcRenderer.invoke(geminiChannels.buildAppFlow, repo),
   proposeEdit: (graph, png) => ipcRenderer.invoke(geminiChannels.proposeEdit, graph, png),
   runManagedRetry: (graph, proposal) =>
     ipcRenderer.invoke(geminiChannels.runManagedRetry, graph, proposal),

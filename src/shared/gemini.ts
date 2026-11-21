@@ -46,7 +46,41 @@ export interface RepoGraph {
   files: string[]
 }
 
-/** Component types the architecture levels can show. Anything else is `other`. */
+/**
+ * The app canvas: how the app runs, in the four shapes an engineer would sketch on a whiteboard.
+ * screen: a page or window the user sees. logic: code that decides things. service: a third party
+ * or backend the app calls (auth, payments, an API). data: a database or store, with its tables.
+ */
+export const flowKinds = ['screen', 'logic', 'service', 'data'] as const
+export type FlowKind = (typeof flowKinds)[number]
+
+export interface FlowBox {
+  id: string
+  kind: FlowKind
+  /** What an engineer would call it on a whiteboard, e.g. "Word guess logic". */
+  name: string
+  /** One plain sentence: what it does. */
+  summary: string
+  /** Tables or collections, for data boxes. */
+  tables: string[]
+  /** Repo-relative files that show it exists. */
+  paths: string[]
+}
+
+export interface FlowLink {
+  id: string
+  from: string
+  to: string
+  /** A few words, e.g. "saves score". Empty when the arrow says enough. */
+  label: string
+}
+
+export interface AppFlow {
+  boxes: FlowBox[]
+  links: FlowLink[]
+}
+
+// ponytail: only diagrams.ts's architectureDiagram still uses these; delete both together.
 export const componentTypes = [
   'service',
   'frontend',
@@ -62,34 +96,15 @@ export const componentTypes = [
   'module',
   'other'
 ] as const
-export type ComponentType = (typeof componentTypes)[number]
-
-export interface ArchitectureComponent {
-  id: string
-  type: ComponentType
-  label: string
-  detail: string
-  /** Repo-relative paths that show this component exists. */
-  paths: string[]
-}
-
-export interface ArchitectureConnection {
-  id: string
-  from: string
-  to: string
-  label: string
-}
-
 export interface ArchitectureGraph {
-  components: ArchitectureComponent[]
-  connections: ArchitectureConnection[]
-}
-
-export interface Architecture {
-  infrastructure: ArchitectureGraph
-  integrations: ArchitectureGraph
-  /** `files`: Gemini inferred this from the file list and manifests, not from the index. */
-  evidence?: { source: 'files' }
+  components: {
+    id: string
+    type: (typeof componentTypes)[number]
+    label: string
+    detail: string
+    paths: string[]
+  }[]
+  connections: { id: string; from: string; to: string; label: string }[]
 }
 
 /** A rectangle in window CSS pixels. */
@@ -134,7 +149,8 @@ export interface DiogenesApi {
     useFixture(): Promise<void>
     /** Finds the main state machine in a repo. Later proposals are checked against its files. */
     buildRepoGraph(repo: RepoRef): Promise<RepoGraph>
-    buildArchitecture(repo: RepoRef): Promise<Architecture>
+    /** The app canvas, inferred by Gemini from the index, file tree, manifests and schemas. */
+    buildAppFlow(repo: RepoRef): Promise<AppFlow>
     proposeEdit(graph: CurrentGraph, png: Uint8Array): Promise<ProposalResult>
     runManagedRetry(graph: CurrentGraph, proposal: ProposedEdit): Promise<ManagedAgentResult>
     /**
@@ -153,7 +169,7 @@ export const geminiChannels = {
   buildCurrentGraph: 'gemini:build-current-graph',
   useFixture: 'gemini:use-fixture',
   buildRepoGraph: 'gemini:build-repo-graph',
-  buildArchitecture: 'gemini:build-architecture',
+  buildAppFlow: 'gemini:build-app-flow',
   proposeEdit: 'gemini:propose-edit',
   runManagedRetry: 'gemini:run-managed-retry',
   runManagedChange: 'gemini:run-managed-change',

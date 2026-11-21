@@ -1009,4 +1009,248 @@ strong.sidebar__name {
 .chat__source:focus-visible {
   color: var(--dg-text);
   text-decoration: underline;
+/* ---------- System tree: root toggle + fold ---------- */
+.component__fold {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 5px;
+  border: 1px solid var(--dg-border-strong);
+  border-radius: 3px;
+  background: var(--dg-surface-3);
+  color: var(--dg-text-2);
+  font: 400 10px/1 var(--dg-font-bit);
+  cursor: pointer;
+}
+.component__fold:hover {
+  color: var(--dg-text);
+  border-color: var(--dg-accent);
+}
+.component__fold[aria-expanded='false'] {
+  color: var(--dg-accent);
+}
+
+/* ---------- App canvas: the four whiteboard shapes + sticky notes ---------- */
+.flow-box {
+  position: relative;
+  width: 230px;
+  color: var(--dg-text);
+  background: var(--dg-surface-2);
+  border: 1.5px solid var(--dg-border-strong);
+  border-radius: 6px;
+}
+.flow-box[data-selected] {
+  border-color: var(--dg-accent);
+  box-shadow: 0 0 0 3px rgba(242, 150, 43, 0.18);
+}
+.flow-box[data-proposed] {
+  border-style: dashed;
+  border-color: var(--dg-accent);
+  background: rgba(242, 150, 43, 0.05);
+}
+.flow-box[data-dim] {
+  opacity: 0.3;
+}
+.flow-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 0;
+}
+.flow-name {
+  flex: 1;
+  min-width: 0;
+  font: 700 14px/1.2 var(--dg-font-ui);
+}
+.flow-summary {
+  margin: 0;
+  padding: 6px 12px 12px;
+  font: 500 12px/1.4 var(--dg-font-ui);
+  color: var(--dg-text-2);
+}
+.flow-tag {
+  flex: none;
+  padding: 2px 5px;
+  border-radius: 3px;
+  font: 400 9px/1 var(--dg-font-bit);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dg-accent);
+  border: 1px solid var(--dg-accent);
+}
+.flow-glyph,
+.flow-brand {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  font: 700 12px/1 var(--dg-font-bit);
+  background: var(--dg-surface-3);
+  color: var(--dg-text-2);
+}
+.flow-brand svg {
+  width: 17px;
+  height: 17px;
+}
+
+/* Screen: a window with a sketch of its UI. */
+.flow-screen__chrome {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 6px 10px;
+  border-bottom: 1.5px solid var(--dg-border-strong);
+  background: var(--dg-surface-1);
+  border-radius: 5px 5px 0 0;
+}
+.flow-screen__chrome i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dg-border-strong);
+}
+.flow-screen__chrome span:not(.flow-tag) {
+  flex: 1;
+  min-width: 0;
+  margin-left: 6px;
+  font: 700 13px/1.2 var(--dg-font-ui);
+}
+.flow-screen__body {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+.flow-screen__body b {
+  height: 10px;
+  border-radius: 2px;
+  background: var(--dg-surface-3);
+}
+.flow-screen__body b:first-child {
+  height: 26px;
+}
+.flow-screen__body b.short {
+  width: 55%;
+}
+
+/* Logic: code. */
+.flow-logic .flow-glyph {
+  color: var(--dg-ok);
+}
+
+/* Service: a rounded capsule, something the app calls out to. */
+.flow-service {
+  border-radius: 26px;
+}
+.flow-service .flow-head {
+  padding: 12px 16px 0;
+}
+.flow-service .flow-summary {
+  padding: 6px 16px 14px;
+}
+
+/* Data: a cylinder with its tables inside. */
+.flow-data {
+  border-radius: 115px / 18px;
+  padding-top: 18px;
+  padding-bottom: 8px;
+}
+.flow-data::before {
+  content: '';
+  position: absolute;
+  left: -1.5px;
+  right: -1.5px;
+  top: -1.5px;
+  height: 34px;
+  border: 1.5px solid inherit;
+  border-color: inherit;
+  border-style: inherit;
+  border-radius: 50%;
+  background: var(--dg-surface-3);
+  pointer-events: none;
+}
+.flow-tables {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px 12px;
+  list-style: none;
+}
+.flow-tables li {
+  padding: 5px 8px;
+  border: 1px solid var(--dg-border-strong);
+  border-radius: 3px;
+  background: var(--dg-bg);
+  font: 400 11px/1 var(--dg-font-bit);
+  color: var(--dg-text);
+}
+
+/* Ports: small, only loud on hover so the boxes stay clean. */
+.flow-port.react-flow__handle {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--dg-text-3);
+  background: var(--dg-bg);
+  opacity: 0.5;
+}
+.flow-box:hover .flow-port.react-flow__handle,
+.flow-note:hover .flow-port.react-flow__handle {
+  opacity: 1;
+  border-color: var(--dg-accent);
+}
+
+/* Sticky note: an instruction for the agent. */
+.flow-note {
+  width: 190px;
+  padding: 10px;
+  background: #f2c94c;
+  color: #1c1a10;
+  border-radius: 2px;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+  transform: rotate(-1.5deg);
+}
+.flow-note[data-selected] {
+  outline: 2px solid var(--dg-accent);
+  outline-offset: 2px;
+}
+.flow-note textarea {
+  width: 100%;
+  min-height: 64px;
+  resize: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: 600 13px/1.35 var(--dg-font-ui);
+  outline: none;
+}
+.flow-note textarea::placeholder {
+  color: rgba(28, 26, 16, 0.5);
+}
+.flow-note .flow-port--note.react-flow__handle {
+  border-color: #1c1a10;
+  background: #f2c94c;
+}
+.flow-note-btn {
+  color: #1c1a10;
+  background: #f2c94c;
+  border-color: #f2c94c;
+}
+
+/* Change request: what the agent will receive. */
+.flow-brief {
+  display: grid;
+  gap: 10px;
+}
+.flow-brief pre {
+  margin: 0;
+  white-space: pre-wrap;
+  color: var(--dg-text);
+  line-height: 1.5;
+}
+.logic-back {
+  padding: 8px 12px 0;
 }

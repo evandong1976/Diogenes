@@ -4,11 +4,12 @@ import { SignIn } from './SignIn'
 import { RepoPicker } from './RepoPicker'
 import { CreateRepo } from './CreateRepo'
 import { NewProject } from './NewProject'
-import type { Architecture } from '../../shared/gemini'
+import type { AppFlow } from '../../shared/gemini'
 import type { IndexStatus, SoftwareGraph } from '../../shared/indexing'
 import { CodeLogicLevel } from './canvas/CodeLogicLevel'
 import { initialLogic, type LogicState } from './canvas/logic'
-import { ArchitectureLevel } from './canvas/ArchitectureLevel'
+import { AppLevel } from './canvas/AppLevel'
+import { EXAMPLE_DRAFT, emptyFlowDraft, type FlowDraft } from './canvas/flow'
 import { indexLabel } from './canvas/indexStatus'
 import { RepositoryCatalog } from './RepositoryCatalog'
 import { Sidebar } from './Sidebar'
@@ -30,11 +31,13 @@ function App(): React.JSX.Element {
   const [newRepo, setNewRepo] = useState<GithubRepo | null>(null)
   // The bundled example can be opened from sign-in without a GitHub account or repo.
   const [exampleOpen, setExampleOpen] = useState(false)
-  // Code logic opens first: it works from the saved example without any API calls.
-  const [level, setLevel] = useState(2)
-  // Held here so switching levels keeps each level's diagram.
+  // One canvas. A Logic box opens its state machine in place of it, until "Back to app".
+  const level = 0
+  const [logicOpen, setLogicOpen] = useState(false)
   const [logic, setLogic] = useState<LogicState>(initialLogic)
-  const [architecture, setArchitecture] = useState<Architecture | null>(null)
+  // The app map Gemini read from the repo, and what the engineer proposed on top of it.
+  const [flow, setFlow] = useState<AppFlow | null>(null)
+  const [flowDraft, setFlowDraft] = useState<FlowDraft>(EXAMPLE_DRAFT)
 
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null)
   // Canvas draws the diagrams; Catalog is the searchable list where catalog entries are edited.
@@ -53,7 +56,9 @@ function App(): React.JSX.Element {
   const pickRepo = (next: GithubRepo): void => {
     window.api.gemini.useFixture()
     setLogic(initialLogic)
-    setArchitecture(null)
+    setLogicOpen(false)
+    setFlow(null)
+    setFlowDraft(emptyFlowDraft)
     setIndexStatus(null)
     setIndexed(null)
     setDrafts({})
@@ -75,7 +80,8 @@ function App(): React.JSX.Element {
   const openExample = (): void => {
     void window.api.gemini.useFixture()
     setLogic(initialLogic)
-    setLevel(2)
+    setLogicOpen(false)
+    setFlowDraft(EXAMPLE_DRAFT)
     setView('canvas')
     setExampleOpen(true)
   }
@@ -164,7 +170,7 @@ function App(): React.JSX.Element {
           catalog={catalog}
           drafts={drafts}
           level={level}
-          setLevel={setLevel}
+          setLevel={() => setLogicOpen(false)}
           view={view}
           setView={setView}
           indexed={shownRepo ? indexed : null}
@@ -184,23 +190,31 @@ function App(): React.JSX.Element {
           <RepositoryCatalog key={shownRepo.id} repoId={shownRepo.id} level={level} />
         ) : (
           <main className="workspace">
-            {!shownRepo || level === 2 ? (
-              <CodeLogicLevel
-                repo={shownRepo}
-                logic={logic}
-                onLogicChange={setLogic}
-                catalog={catalog}
-                indexStatus={shownRepo ? indexStatus : null}
-              />
+            {logicOpen ? (
+              <>
+                <div className="logic-back">
+                  <button className="dg-btn dg-btn--ghost" onClick={() => setLogicOpen(false)}>
+                    ← Back to app
+                  </button>
+                </div>
+                <CodeLogicLevel
+                  repo={shownRepo}
+                  logic={logic}
+                  onLogicChange={setLogic}
+                  catalog={catalog}
+                  indexStatus={shownRepo ? indexStatus : null}
+                />
+              </>
             ) : (
-              <ArchitectureLevel
+              <AppLevel
                 repo={shownRepo}
-                level={level === 0 ? 'infrastructure' : 'integrations'}
-                architecture={architecture}
-                onArchitectureChange={setArchitecture}
+                flow={flow}
+                onFlow={setFlow}
+                draft={flowDraft}
+                setDraft={(update) => setFlowDraft(update)}
                 indexStatus={indexStatus}
-                catalog={catalog}
-                indexed={indexed}
+                focusFile={focusFile}
+                onOpenLogic={() => setLogicOpen(true)}
               />
             )}
           </main>
@@ -262,15 +276,10 @@ function Workspace({
   onChatOpen(open: boolean): void
 }): React.JSX.Element {
   const levelCounts = useMemo(() => {
-    if (!catalog) return [null, null, null]
+    if (!catalog) return [null]
     const count = (kinds: string[]): number =>
       catalog.nodes.filter((n) => kinds.includes(n.kind)).length
-    return [
-      count(catalogKindsByLevel.infrastructure),
-      count(catalogKindsByLevel.integrations),
-      // Logic also works from the bundled example, so 0 machines isn't "empty".
-      count(['stateMachine']) || null
-    ]
+    return [count([...catalogKindsByLevel.infrastructure, ...catalogKindsByLevel.integrations])]
   }, [catalog])
 
   const fileCounts = useMemo(() => {

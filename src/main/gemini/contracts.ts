@@ -1,7 +1,6 @@
 import {
-  componentTypes,
-  type Architecture,
-  type ArchitectureGraph,
+  flowKinds,
+  type AppFlow,
   type CurrentGraph,
   type GraphState,
   type GraphTransition,
@@ -251,45 +250,37 @@ export function validateRepoGraph(
   return graph
 }
 
-const component = object({
+const flowBox = object({
   id: string,
-  type: { type: 'string', enum: [...componentTypes] },
-  label: string,
-  detail: string,
-  paths: array(string, 0, 4)
+  kind: { type: 'string', enum: [...flowKinds] },
+  name: string,
+  summary: string,
+  tables: array(string, 0, 12),
+  paths: array(string, 0, 6)
 })
-const connection = object({ id: string, from: string, to: string, label: string })
-const architectureGraph = object({
-  components: array(component, 0, 24),
-  connections: array(connection, 0, 64)
+// label is optional: an obvious arrow needs none, and the matcher rejects empty strings.
+const flowLink = object({ id: string, from: string, to: string, label: string }, [
+  'id',
+  'from',
+  'to'
+])
+
+export const appFlowSchema = object({
+  boxes: array(flowBox, 1, 14),
+  links: array(flowLink, 0, 40)
 })
 
-export const architectureSchema = object({
-  infrastructure: architectureGraph,
-  integrations: architectureGraph
-})
-
-function validArchitectureGraph(graph: ArchitectureGraph, paths: Set<string>): boolean {
-  const ids = new Set(graph.components.map(({ id }) => id))
-  const connectionIds = new Set(graph.connections.map(({ id }) => id))
-  return (
-    ids.size === graph.components.length &&
-    connectionIds.size === graph.connections.length &&
-    graph.connections.every(({ from, to }) => ids.has(from) && ids.has(to) && from !== to) &&
-    graph.components.every((c) => c.paths.every((p) => paths.has(p)))
-  )
-}
-
-/** `paths` is every file path in the repo tree that was shown to Gemini. */
-export function validateArchitecture(value: unknown, paths: Set<string>): Architecture {
-  const error = new Error('Architecture failed server validation.')
-  if (!matches(value, architectureSchema)) throw error
-  const result = value as Architecture
-  if (
-    !validArchitectureGraph(result.infrastructure, paths) ||
-    !validArchitectureGraph(result.integrations, paths)
-  ) {
-    throw error
+/** `paths` is every file path that was shown to Gemini. Unknown paths are dropped, not fatal. */
+export function validateAppFlow(value: unknown, paths: Set<string>): AppFlow {
+  if (!matches(value, appFlowSchema)) throw new Error('App flow failed server validation.')
+  const flow = value as AppFlow
+  const ids = new Set(flow.boxes.map(({ id }) => id))
+  if (ids.size !== flow.boxes.length) throw new Error('App flow repeats a box ID.')
+  return {
+    boxes: flow.boxes.map((b) => ({ ...b, paths: b.paths.filter((p) => paths.has(p)) })),
+    // Drop arrows to boxes that don't exist rather than failing the whole map.
+    links: flow.links
+      .filter(({ from, to }) => ids.has(from) && ids.has(to) && from !== to)
+      .map((l) => ({ ...l, label: l.label ?? '' }))
   }
-  return result
 }

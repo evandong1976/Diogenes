@@ -12,13 +12,7 @@ import {
   type ProposedEdit,
   type RepoRef
 } from '../../shared/gemini'
-import {
-  buildArchitecture,
-  buildRepoGraph,
-  filesForChange,
-  proposeEdit,
-  setCurrentFiles
-} from './repo'
+import { buildAppFlow, buildRepoGraph, filesForChange, proposeEdit, setCurrentFiles } from './repo'
 import { createGeminiService } from './service'
 import { runManagedChange, runManagedRetry } from './managed-agent'
 
@@ -91,9 +85,7 @@ export function registerGeminiHandlers(): void {
   ipcMain.handle(geminiChannels.buildRepoGraph, (_event, repo: unknown) =>
     buildRepoGraph(toRepo(repo))
   )
-  ipcMain.handle(geminiChannels.buildArchitecture, (_event, repo: unknown) =>
-    buildArchitecture(toRepo(repo))
-  )
+  ipcMain.handle(geminiChannels.buildAppFlow, (_event, repo: unknown) => buildAppFlow(toRepo(repo)))
   ipcMain.handle(geminiChannels.proposeEdit, (_event, graph: unknown, png: unknown) =>
     proposeEdit(graph, png)
   )
