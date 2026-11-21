@@ -1,22 +1,26 @@
-import { contextBridge } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
+import { contextBridge, ipcRenderer } from 'electron'
 
-// Custom APIs for renderer
-const api = {}
-
-// Use `contextBridge` APIs to expose Electron APIs to
-// renderer only if context isolation is enabled, otherwise
-// just add to the DOM global.
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
-    contextBridge.exposeInMainWorld('api', api)
-  } catch (error) {
-    console.error(error)
-  }
-} else {
-  // @ts-ignore (define in dts)
-  window.electron = electronAPI
-  // @ts-ignore (define in dts)
-  window.api = api
+export type GithubUser = { login: string; name: string | null }
+export type DeviceCode = { userCode: string; verificationUri: string }
+export type GithubRepo = {
+  id: number
+  fullName: string
+  private: boolean
+  description: string | null
+  defaultBranch: string
+  updatedAt: string
 }
+
+const api = {
+  github: {
+    getUser: (): Promise<GithubUser | null> => ipcRenderer.invoke('github:getUser'),
+    startLogin: (): Promise<DeviceCode> => ipcRenderer.invoke('github:startLogin'),
+    finishLogin: (): Promise<GithubUser> => ipcRenderer.invoke('github:finishLogin'),
+    logout: (): Promise<void> => ipcRenderer.invoke('github:logout'),
+    listRepos: (): Promise<GithubRepo[]> => ipcRenderer.invoke('github:listRepos')
+  }
+}
+
+export type Api = typeof api
+
+contextBridge.exposeInMainWorld('api', api)

@@ -8,8 +8,15 @@ Requires Node 22+ and pnpm (`corepack enable`).
 
 ```bash
 pnpm install
+cp .env.example .env   # then fill in the client ID (below)
 pnpm dev
 ```
+
+### GitHub sign-in
+
+Sign-in uses GitHub's [device flow](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow), so there's no client secret and no redirect server. The token stays in the main process, encrypted with Electron `safeStorage`.
+
+The team shares one GitHub OAuth App. To create one: GitHub → Settings → Developer settings → OAuth Apps → New. Any homepage and callback URL will do. Tick **Enable Device Flow**, then put its Client ID in `.env` as `MAIN_VITE_GITHUB_CLIENT_ID`.
 
 ## Layout
 

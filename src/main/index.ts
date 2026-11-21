@@ -2,6 +2,7 @@ import { app, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { registerGithubIpc } from './github'
 
 function createWindow(): void {
   // Create the browser window.
@@ -49,6 +50,7 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  registerGithubIpc()
   createWindow()
 
   app.on('activate', function () {
