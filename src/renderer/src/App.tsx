@@ -342,6 +342,7 @@ function App(): React.JSX.Element {
               </>
             ) : (
               <AppLevel
+                key={shownRepo?.id ?? 'example'}
                 repo={shownRepo}
                 flow={flow}
                 onFlow={setFlow}

@@ -77,7 +77,12 @@ export class CodingRunGateway implements CodingRunApi {
     return this.withRun(runId, async (run) => {
       if (run.phase === 'running') await this.refresh(run)
       else if (run.phase === 'starting' && !this.inflight.has(runId)) this.orphaned(run)
-      else if (run.phase === 'cancelled' && run.cancellation?.outcome === 'requested')
+      else if (
+        run.phase === 'cancelled' &&
+        (run.cancellation?.outcome === 'requested' ||
+          run.cancellation?.outcome === 'unconfirmed') &&
+        run.cancellation.interactionId
+      )
         await this.confirmCancel(run)
       return run
     })
@@ -316,8 +321,10 @@ export class CodingRunGateway implements CodingRunApi {
       c.outcome = 'confirmed'
       c.detail = 'The provider reports the turn cancelled.'
     } else if (isActive(interaction.status)) {
-      c.outcome = 'requested'
-      c.detail = `Cancel sent; the provider still reports ${interaction.status}.`
+      if (c.outcome !== 'unconfirmed') {
+        c.outcome = 'requested'
+        c.detail = `Cancel sent; the provider still reports ${interaction.status}.`
+      }
     } else {
       c.outcome = 'finished'
       c.detail = `The turn had already ended (${interaction.status}) before the cancel took effect.`

@@ -550,6 +550,19 @@ function LatestActions({
   handoff: HandoffRecord
 }): React.JSX.Element | null {
   if (handoff.stage === 'accepted') return <Deliver chat={chat} handoff={handoff} />
+  if (handoff.stage === 'needs-decision' && handoff.decision?.options.includes('retry-run'))
+    return (
+      <div className="chat__actions">
+        <button
+          type="button"
+          className="dg-btn"
+          disabled={!!chat.codingBusy}
+          onClick={() => void chat.retryHandoff(handoff)}
+        >
+          Retry coding run
+        </button>
+      </div>
+    )
   if (handoff.stage !== 'correctable') return null
   const { threadId, proposalId } = handoff.correlation
   const intent = chat.project?.intents.find((i) => i.proposalId === proposalId)

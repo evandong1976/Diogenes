@@ -183,7 +183,9 @@ export function attemptEvents(handoff: HandoffRecord, run: RunRecord): RunEvent[
 
 /** A follow-up can go to the coding agent once its turn has ended and the handoff is open. */
 export const canFollowUp = (handoff: HandoffRecord | null): boolean =>
-  !!handoff && !['coding', 'verifying', 'closed'].includes(handoff.stage)
+  !!handoff &&
+  !['coding', 'verifying', 'closed'].includes(handoff.stage) &&
+  !!handoff.runs.at(-1)?.run.reusable
 
 export const ORIGIN_LABEL: Record<NonNullable<RunRecord['origin']>, string> = {
   start: 'Handoff',

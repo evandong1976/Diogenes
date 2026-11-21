@@ -46,26 +46,34 @@ export function AppLevel({
   const [version, setVersion] = useState(0)
   const waiting = indexRunning(indexStatus)
   const asked = useRef<number | null>(null)
+  const mounted = useRef(false)
   // The repo whose saved map we looked for and didn't find; only then is Gemini called on its own.
   const [noSaved, setNoSaved] = useState<number | null>(null)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   const infer = async (): Promise<void> => {
     if (!repo) return
     setBusy(true)
     setError(null)
     try {
-      onFlow(
-        await window.api.gemini.buildAppFlow({
-          id: repo.id,
-          fullName: repo.fullName,
-          branch: repo.defaultBranch
-        })
-      )
+      const result = await window.api.gemini.buildAppFlow({
+        id: repo.id,
+        fullName: repo.fullName,
+        branch: repo.defaultBranch
+      })
+      if (!mounted.current) return
+      onFlow(result)
       setVersion((v) => v + 1)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (mounted.current) setError(e instanceof Error ? e.message : String(e))
     } finally {
-      setBusy(false)
+      if (mounted.current) setBusy(false)
     }
   }
 

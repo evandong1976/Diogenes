@@ -71,6 +71,7 @@ export interface DesignChat {
   /** Resolves true once the handoff started (or was already open). */
   startHandoff(approvalId: string): Promise<boolean>
   cancelHandoff(handoff: HandoffRecord): Promise<boolean>
+  retryHandoff(handoff: HandoffRecord): Promise<boolean>
   /** Pushes the verified candidate to a review branch; never the default branch. */
   publishVerified(handoff: HandoffRecord): Promise<boolean>
   /** A follow-up turn for the coding agent in the same workspace, once its turn has ended. */
@@ -407,6 +408,10 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
       runCodingAction(approvalId, (p) => api.workflow.startHandoff(p, approvalId)),
     cancelHandoff: (handoff) =>
       runCodingAction(handoff.approvalId, (p) => api.workflow.cancel(p, handoff.handoffId)),
+    retryHandoff: (handoff) =>
+      runCodingAction(handoff.approvalId, (p) =>
+        api.workflow.resolveDecision(p, handoff.handoffId, 'retry-run')
+      ),
     steerHandoff: (handoff, text) =>
       runCodingAction(handoff.approvalId, (p) =>
         api.workflow.steer(p, handoff.handoffId, text.trim())
