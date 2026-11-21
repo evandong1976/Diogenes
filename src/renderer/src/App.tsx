@@ -8,6 +8,7 @@ import { CodeLogicLevel } from './canvas/CodeLogicLevel'
 import { initialLogic, type LogicState } from './canvas/logic'
 import { ArchitectureLevel } from './canvas/ArchitectureLevel'
 import { indexLabel } from './canvas/indexStatus'
+import { RepositoryCatalog } from './RepositoryCatalog'
 
 const LEVELS = ['Infrastructure', 'Integrations', 'Code logic'] as const
 
@@ -21,6 +22,8 @@ function App(): React.JSX.Element {
   const [architecture, setArchitecture] = useState<Architecture | null>(null)
 
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null)
+  // Canvas draws the diagrams; Catalog is the searchable list where catalog entries are edited.
+  const [view, setView] = useState<'canvas' | 'catalog'>('canvas')
 
   const pickRepo = (next: GithubRepo): void => {
     window.api.gemini.useFixture()
@@ -75,20 +78,32 @@ function App(): React.JSX.Element {
             </button>
           ))}
         </div>
+        <div className="segmented" role="group" aria-label="View">
+          <button onClick={() => setView('canvas')} aria-pressed={view === 'canvas'}>
+            Canvas
+          </button>
+          <button onClick={() => setView('catalog')} aria-pressed={view === 'catalog'}>
+            Catalog
+          </button>
+        </div>
       </nav>
-      <main className="workspace">
-        {level === 2 ? (
-          <CodeLogicLevel repo={repo} logic={logic} onLogicChange={setLogic} />
-        ) : (
-          <ArchitectureLevel
-            repo={repo}
-            level={level === 0 ? 'infrastructure' : 'integrations'}
-            architecture={architecture}
-            onArchitectureChange={setArchitecture}
-            indexStatus={indexStatus}
-          />
-        )}
-      </main>
+      {view === 'catalog' ? (
+        <RepositoryCatalog key={repo.id} repoId={repo.id} level={level} />
+      ) : (
+        <main className="workspace">
+          {level === 2 ? (
+            <CodeLogicLevel repo={repo} logic={logic} onLogicChange={setLogic} />
+          ) : (
+            <ArchitectureLevel
+              repo={repo}
+              level={level === 0 ? 'infrastructure' : 'integrations'}
+              architecture={architecture}
+              onArchitectureChange={setArchitecture}
+              indexStatus={indexStatus}
+            />
+          )}
+        </main>
+      )}
       <footer className="statusbar dg-data">
         <span>
           L{level + 1} · {LEVELS[level]}
