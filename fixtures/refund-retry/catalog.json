@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "repository": {
+    "id": 1466713316,
+    "fullName": "evandong1976/Diogenes"
+  },
+  "revision": 0,
+  "nodes": [
+    {
+      "id": "state-machine:refund-retry",
+      "kind": "stateMachine",
+      "name": "Refund retry",
+      "resolution": "bound",
+      "properties": {
+        "behavior": {
+          "version": 1,
+          "initialState": "Ready",
+          "states": ["Ready", "Attempt1", "Attempt2", "Succeeded", "Failed"],
+          "transitions": [
+            {
+              "id": "start",
+              "from": "Ready",
+              "event": {
+                "type": "Start"
+              },
+              "to": "Attempt1",
+              "effect": {
+                "type": "RunAttempt",
+                "attempt": 1
+              }
+            },
+            {
+              "id": "attempt.1.succeeded",
+              "from": "Attempt1",
+              "event": {
+                "type": "Succeeded",
+                "attempt": 1
+              },
+              "to": "Succeeded",
+              "effect": {
+                "type": "NoEffect"
+              }
+            },
+            {
+              "id": "attempt.1.failed",
+              "from": "Attempt1",
+              "event": {
+                "type": "Failed",
+                "attempt": 1
+              },
+              "to": "Attempt2",
+              "effect": {
+                "type": "RunAttempt",
+                "attempt": 2
+              }
+            },
+            {
+              "id": "attempt.2.succeeded",
+              "from": "Attempt2",
+              "event": {
+                "type": "Succeeded",
+                "attempt": 2
+              },
+              "to": "Succeeded",
+              "effect": {
+                "type": "NoEffect"
+              }
+            },
+            {
+              "id": "attempt.2.failed",
+              "from": "Attempt2",
+              "event": {
+                "type": "Failed",
+                "attempt": 2
+              },
+              "to": "Failed",
+              "effect": {
+                "type": "NoEffect"
+              }
+            }
+          ]
+        }
+      },
+      "ports": [],
+      "sources": [
+        {
+          "path": "fixtures/refund-retry/reducer.bend",
+          "field": "step"
+        },
+        {
+          "path": "fixtures/refund-retry/retry.ts",
+          "field": "createRefundRetry"
+        }
+      ]
+    }
+  ],
+  "edges": []
+}
