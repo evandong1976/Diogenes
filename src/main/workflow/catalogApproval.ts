@@ -261,7 +261,7 @@ const MAX_EXCERPT_CHARS = 4_000
  * The plan as frozen: evidence keeps only repository paths, each excerpt is bounded, and the
  * acceptance checks stay guidance. The backend passes only evidence read at the base commit.
  */
-function handoffPlan(plan: HandoffPlan, scope: string[]): HandoffPlan {
+export function handoffPlan(plan: HandoffPlan, scope: string[]): HandoffPlan {
   const inScope = (path: string): boolean =>
     scope.some((entry) => path === entry || path.startsWith(`${entry}/`))
   const evidence = plan.evidence
@@ -272,9 +272,13 @@ function handoffPlan(plan: HandoffPlan, scope: string[]): HandoffPlan {
     .map((e) => ({ ...e, excerpt: e.excerpt.slice(0, MAX_EXCERPT_CHARS) }))
   return {
     summary: plan.summary,
+    ...(plan.conversationSummary && { conversationSummary: plan.conversationSummary }),
     behavior: plan.behavior,
     steps: [...plan.steps],
     preserved: [...plan.preserved],
+    ...(plan.implementationChoices?.length && {
+      implementationChoices: [...plan.implementationChoices]
+    }),
     acceptance: [...plan.acceptance],
     evidence
   }

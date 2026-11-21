@@ -97,6 +97,8 @@ function scriptedModel(baseline: CatalogGraph): ModelClient {
           args: {
             summary: 'The preload orders call should read archived orders.',
             plan: {
+              conversationSummary:
+                'Support needs to look up older orders quickly from the existing orders screen.',
               behavior: 'The renderer lists archived orders through the same preload call.',
               steps: ['Point the preload orders call at the orders:archived channel.'],
               preserved: ['The preload still exposes orders() to the renderer.'],
@@ -280,13 +282,21 @@ it.skipIf(process.env.DIOGENES_LIVE_SMOKE !== '1')(
     const app = await open()
     const thread = await app.threads.create(PROJECT, { kind: 'design', title: 'Live rewire' })
     await app.design.openProject(PROJECT)
-    const { turn } = await app.design.startTurn({
+    const conversation = {
       projectId: PROJECT,
       threadId: thread.id,
       model,
-      graph: { repositoryId: REPO.id, commitSha: base, revision: 0 },
-      selectedComponentId: CALLER,
-      message: `Propose one rewire so the preload orders function calls orders:archived instead of orders:list. Inspect the source, current connection and both endpoint ports first. In the same atomic proposal, declare one dataContract for string[] and update the caller and archived endpoint ports to reference it, then rewire the existing calls edge with the same ID. Keep both handlers and all other connections unchanged.`
+      graph: { repositoryId: REPO.id, commitSha: base, revision: 0 }
+    }
+    const discussion = await app.design.startTurn({
+      ...conversation,
+      message:
+        'Support needs to look up older orders quickly. I’d like the orders screen to show archived orders by default, while the regular listing stays available to the rest of the app. How would you design that? Let’s talk it through first.'
+    })
+    expect(discussion.turn.status, discussion.turn.error).toBe('completed')
+    const { turn } = await app.design.startTurn({
+      ...conversation,
+      message: 'That sounds right. Show me the proposed change on the canvas.'
     })
     expect(turn.status, turn.error ?? turn.reply ?? 'Design agent returned no proposal').toBe(
       'awaiting-approval'
@@ -294,6 +304,9 @@ it.skipIf(process.env.DIOGENES_LIVE_SMOKE !== '1')(
     const { approval, approvalError } = await app.design.approve(PROJECT, turn.proposalId!, 0)
     expect(approval, approvalError).toBeTruthy()
     const packet = approval!.packet as CatalogApprovedChange
+    expect(packet.plan?.conversationSummary).toMatch(/support/i)
+    const brief = await app.workflow.briefPreview(PROJECT, approval!.approvalId)
+    expect(brief.split('\n\n')[1]).toBe(`## Product context\n${packet.plan?.conversationSummary}`)
     expect(packet.connections.filter((c) => c.origin === 'required')).toEqual([
       expect.objectContaining({ expect: 'present', from: CALLER, to: ARCHIVED }),
       expect.objectContaining({ expect: 'absent', from: CALLER, to: LIST })

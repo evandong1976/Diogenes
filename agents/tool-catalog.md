@@ -54,7 +54,8 @@ The model sees these tools. All run locally against the draft the turn was given
 | `inspect_component`  | A component's kind, ports, cited sources, and direct connections.                                                            |
 | `follow_connections` | Connections and components up to 3 hops in, out, or both.                                                                    |
 | `read_source`        | The cited source excerpt at the draft commit. It is recorded as evidence and returns an `evidenceId`.                        |
-| `propose_graph_edit` | Validates a `CatalogPatch` with `applyCatalogPatch` and a required `plan` (`behavior`, `steps`, `acceptance`, optional `preserved` and `files`). It records a pending proposal with a preview, or returns the rejection. A new proposal in a thread supersedes the pending one (`status: 'stale'`, `supersededBy`). |
+| `list_components` | Finds components by name, type or source path and returns up to 12 ranked matches with IDs for inspection. |
+| `propose_graph_edit` | Validates a `CatalogPatch` with `applyCatalogPatch` and a required `plan` (`conversationSummary`, `behavior`, `steps`, `acceptance`, optional `preserved`, `implementationChoices` and `files`). It records a pending proposal with a preview, or returns the rejection. A new proposal in a thread supersedes the pending one (`status: 'stale'`, `supersededBy`). |
 | `read_verification`  | The latest `VerificationReport` for an approved intent in the thread.                                                        |
 | `request_correction` | Records a `CorrectionRequest` against a failed verification. The intent is unchanged.                                        |
 

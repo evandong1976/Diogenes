@@ -4,6 +4,7 @@ import type {
   ApprovedChange,
   CatalogApprovedChange,
   CorrectionRequest,
+  HandoffPlan,
   RetryApprovedChange
 } from '../../shared/workflow'
 
@@ -11,6 +12,8 @@ const list = (items: string[]): string => items.map((i) => `- ${i}`).join('\n')
 
 export function codingBrief(packet: ApprovedChange, correction?: CorrectionRequest): string {
   const sections = packet.kind === 'catalog' ? catalogSections(packet) : retrySections(packet)
+  const context = packet.plan?.conversationSummary
+  if (context) sections.splice(1, 0, `## Product context\n${context}`)
   if (correction) sections.push(correctionSection(correction))
   return sections.join('\n\n')
 }
@@ -45,24 +48,11 @@ function catalogSections(packet: CatalogApprovedChange): string[] {
   return [
     `# ${goal}`,
     `Make the change in ${packet.repository.fullName} at commit ${packet.baseCommit}. Edit the repository code only in ${packet.scope.map((p) => `\`${p}\``).join(', ')}.`,
-    ...(plan
-      ? [
-          `## Intended behavior\n${plan.summary}\n\n${plan.behavior}`,
-          `## Steps\n${plan.steps.map((step, i) => `${i + 1}. ${step}`).join('\n')}`,
-          ...(plan.files?.length
-            ? [`Files the plan names: ${plan.files.map((f) => `\`${f}\``).join(', ')}.`]
-            : [])
-        ]
-      : []),
+    ...designSections(plan),
     `## What the code must do\n${list(packet.requiredChanges.map(task))}`,
     `## Must stay the same\n${list([...(plan?.preserved ?? []), ...packet.preserved.map(keep)])}`,
-    `## Your choice\n${list(packet.openChoices)}`,
-    ...(plan?.evidence.length ? [evidenceSection(packet.baseCommit, plan.evidence)] : []),
-    ...(plan?.acceptance.length
-      ? [
-          `## Acceptance checks from the plan (not verified by Diogenes)\nRun these where you can and say what you saw. They guide the work; they do not accept it, and Diogenes reports nothing about them as passed.\n${list(plan.acceptance)}`
-        ]
-      : []),
+    `## Implementation choices\n${list(implementationChoices(packet))}`,
+    ...planReview(packet),
     WORKSPACE,
     `## How your change is checked\nYour run completing does not accept the change. These checks do, on the exact files you export: the repository is type checked and re-indexed, and each connection below is looked up in the re-indexed code.\n${list(
       packet.obligations.map((o) => `\`${o.id}\`: ${o.scope}`)
@@ -70,6 +60,33 @@ function catalogSections(packet: CatalogApprovedChange): string[] {
     ...(packet.unobservable.length
       ? [
           `## Required but not observable locally\nDo these; the re-index cannot see them, so they are reported \`unknown\`, never passed.\n${list(packet.unobservable)}`
+        ]
+      : [])
+  ]
+}
+
+function designSections(plan: HandoffPlan | undefined): string[] {
+  if (!plan) return []
+  return [
+    `## Intended behavior\n${plan.behavior}`,
+    `## System design\n${plan.steps.map((step, i) => `${i + 1}. ${step}`).join('\n')}`,
+    ...(plan.files?.length
+      ? [`Files the plan names: ${plan.files.map((f) => `\`${f}\``).join(', ')}.`]
+      : [])
+  ]
+}
+
+const implementationChoices = (packet: ApprovedChange): string[] =>
+  packet.plan?.implementationChoices?.length
+    ? packet.plan.implementationChoices
+    : packet.openChoices
+
+function planReview({ plan, baseCommit }: ApprovedChange): string[] {
+  return [
+    ...(plan?.evidence.length ? [evidenceSection(baseCommit, plan.evidence)] : []),
+    ...(plan?.acceptance.length
+      ? [
+          `## Acceptance checks from the plan (not verified by Diogenes)\nRun these where you can and report the results. Diogenes records its own verification separately.\n${list(plan.acceptance)}`
         ]
       : [])
   ]
@@ -98,13 +115,15 @@ function task(line: string): string {
 const keep = (line: string): string => line.replace(/ stays connected$/, ' (keep this)')
 
 function retrySections(packet: RetryApprovedChange): string[] {
-  const { bindings: b } = packet
+  const { bindings: b, plan } = packet
   return [
-    `# Implement approved change to ${packet.targetComponentId}`,
+    `# ${plan?.summary ?? `Implement approved change to ${packet.targetComponentId}`}`,
     `Repository ${packet.repository.fullName} at base commit ${packet.baseCommit}. Edit only files under \`${b.root}/\`.`,
+    ...designSections(plan),
     `## Required changes\n${list(packet.requiredChanges)}`,
-    `## Must stay the same\n${list(packet.preserved)}`,
-    `## Your choice\n${list(packet.openChoices)}`,
+    `## Must stay the same\n${list([...(plan?.preserved ?? []), ...packet.preserved])}`,
+    `## Implementation choices\n${list(implementationChoices(packet))}`,
+    ...planReview(packet),
     [
       '## Bindings',
       `- Reducer: \`${b.root}/${b.reducer.file}\` export \`${b.reducer.export}\``,

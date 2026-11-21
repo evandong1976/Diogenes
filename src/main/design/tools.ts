@@ -150,6 +150,16 @@ const nodeSchema = {
 
 export const toolDeclarations: FunctionDeclaration[] = [
   {
+    name: 'list_components',
+    description:
+      'Find components in the working draft by a natural-language name, role, or source file. Use the returned IDs to inspect plausible matches.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: { query: str('A short phrase, for example checkout gateway or orders screen.') },
+      required: ['query']
+    }
+  },
+  {
     name: 'inspect_component',
     description:
       'Read one component of the working draft: kind, properties, ports, cited source locations, and its direct connections.',
@@ -193,7 +203,7 @@ export const toolDeclarations: FunctionDeclaration[] = [
     parametersJsonSchema: {
       type: 'object',
       properties: {
-        summary: str('One or two sentences the developer will approve.'),
+        summary: str('Short, plain-language title of the change, using visible component names.'),
         evidenceIds: {
           type: 'array',
           items: { type: 'string' },
@@ -204,9 +214,13 @@ export const toolDeclarations: FunctionDeclaration[] = [
           description:
             'The plan the developer reviews and the coding agent receives with the patch.',
           properties: {
+            conversationSummary: str(
+              'Two to four sentences for an engineer joining the conversation: product goal, motivation if known, decisions agreed with the developer, and material constraints.'
+            ),
             behavior: str('What the system does once the change lands, in plain words.'),
-            steps: strList('Ordered implementation or migration steps, naming files and components.'),
+            steps: strList('Ordered system design changes, naming components and citing files where helpful.'),
             preserved: strList('Behavior and connections that must stay true.'),
+            implementationChoices: strList('Decisions left to the coding agent inside the approved scope.'),
             acceptance: strList(
               'Concrete checks a reviewer or coding agent can run to see it worked. Diogenes does not prove these.'
             ),
@@ -214,7 +228,7 @@ export const toolDeclarations: FunctionDeclaration[] = [
               'Repository-relative files the steps must edit or create beyond the touched components\' source, e.g. package.json or src/lib/supabase.ts. Files only, never directories; at most 8.'
             )
           },
-          required: ['behavior', 'steps', 'acceptance']
+          required: ['conversationSummary', 'behavior', 'steps', 'acceptance']
         },
         operations: {
           type: 'array',
@@ -271,6 +285,8 @@ export async function runTool(
 ): Promise<ToolOutcome> {
   try {
     switch (name) {
+      case 'list_components':
+        return listComponents(ctx.graph, text(args.query, 'query'))
       case 'inspect_component':
         return inspect(ctx.graph, text(args.componentId, 'componentId'))
       case 'follow_connections':
@@ -305,8 +321,40 @@ function text(value: unknown, field: string): string {
 
 function node(graph: CatalogGraph, id: string): CatalogNode {
   const found = graph.nodes.find((n) => n.id === id)
-  if (!found) throw new ArgumentError(`Component ${id} is not in draft revision ${graph.revision}.`)
+  if (!found)
+    throw new ArgumentError(`Component ${id} is not in draft revision ${graph.revision}. Use list_components to find it by name.`)
   return found
+}
+
+const searchText = (s: string): string =>
+  s.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+
+function listComponents(graph: CatalogGraph, search: string): ToolOutcome {
+  const query = searchText(search)
+  const terms = [...new Set(query.split(' ').filter(Boolean))]
+  if (!terms.length || search.length > 200) throw new ArgumentError('Use a short component name or phrase.')
+  const matches = graph.nodes
+    .map((component) => {
+      const { id, name, kind, sources } = component
+      const label = searchText(name)
+      const details = searchText(`${id} ${kind} ${sources.map((s) => s.path).join(' ')}`)
+      const score = terms.reduce(
+        (sum, term) => sum + (label.includes(term) ? 4 : Number(details.includes(term))),
+        label === query ? 12 : 0
+      )
+      return { id, name, kind, paths: [...new Set(sources.map((s) => s.path))].slice(0, 2), score }
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+  return {
+    ok: true,
+    summary: `Found ${matches.length} components for “${search}”`,
+    response: {
+      revision: graph.revision,
+      total: matches.length,
+      components: matches.slice(0, 12).map(({ id, name, kind, paths }) => ({ id, name, kind, paths }))
+    }
+  }
 }
 
 const edgeView = (graph: CatalogGraph, e: CatalogEdge): Record<string, unknown> => ({
@@ -493,7 +541,10 @@ const MAX_PLAN_ITEMS = 12
 function planOf(value: unknown): ProposalPlan {
   const plan = value as Record<string, unknown> | null
   if (!plan || typeof plan !== 'object')
-    throw new ArgumentError('plan is required: behavior, steps and acceptance.')
+    throw new ArgumentError('plan is required: conversationSummary, behavior, steps and acceptance.')
+  const conversationSummary = text(plan.conversationSummary, 'plan.conversationSummary').trim()
+  if (conversationSummary.length > 1200)
+    throw new ArgumentError('plan.conversationSummary needs to fit in 1,200 characters.')
   const items = (field: string, required: boolean): string[] => {
     const list = plan[field] ?? []
     if (!Array.isArray(list) || list.some((i) => typeof i !== 'string'))
@@ -505,9 +556,11 @@ function planOf(value: unknown): ProposalPlan {
     return clean
   }
   return {
+    conversationSummary,
     behavior: text(plan.behavior, 'plan.behavior').trim(),
     steps: items('steps', true),
     preserved: items('preserved', false),
+    implementationChoices: items('implementationChoices', false),
     acceptance: items('acceptance', true),
     files: filesOf(items('files', false))
   }

@@ -489,6 +489,8 @@ function ProposalCard({
     : PROPOSAL_STATUS[proposal.status]
   const { revise } = useContext(PaneActions)
   const { plan } = proposal
+  const componentNames = new Map(draft?.graph.nodes.map((node) => [node.id, node.name]))
+  for (const component of preview.components) componentNames.set(component.id, component.name)
   return (
     <section
       className="chat-proposal"
@@ -507,6 +509,12 @@ function ProposalCard({
         )}
       </header>
       <p>{proposal.summary}</p>
+      {plan?.conversationSummary && (
+        <div className="chat-proposal__section">
+          <span className="chat-proposal__label">Product context</span>
+          <p>{plan.conversationSummary}</p>
+        </div>
+      )}
       {plan && (
         <div className="chat-proposal__section">
           <span className="chat-proposal__label">Intended behavior</span>
@@ -531,7 +539,7 @@ function ProposalCard({
           {preview.connections.map((c) => (
             <li key={`e-${c.change}-${c.id}`} title={c.id} data-change={c.change}>
               <span className="chat-proposal__mark">{CHANGE_MARK[c.change]}</span>
-              {c.from} → {c.to}
+              {componentNames.get(c.from) ?? c.from} → {componentNames.get(c.to) ?? c.to}
               <span className="chat__muted"> · {c.kind}</span>
             </li>
           ))}
@@ -606,13 +614,23 @@ function PlanDetail({ plan }: { plan: NonNullable<Proposal['plan']> }): React.JS
   return (
     <>
       <div className="chat-proposal__section">
-        <span className="chat-proposal__label">Steps</span>
+        <span className="chat-proposal__label">System design</span>
         <ol className="chat-proposal__steps">
           {plan.steps.map((step, i) => (
             <li key={i}>{step}</li>
           ))}
         </ol>
       </div>
+      {!!plan.implementationChoices?.length && (
+        <div className="chat-proposal__section">
+          <span className="chat-proposal__label">Implementation choices</span>
+          <ul className="chat-proposal__steps">
+            {plan.implementationChoices.map((choice, i) => (
+              <li key={i}>{choice}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {plan.preserved.length > 0 && (
         <div className="chat-proposal__section">
           <span className="chat-proposal__label">Stays true</span>

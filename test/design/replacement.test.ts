@@ -83,6 +83,8 @@ function replacement(
     summary: 'Serve notes from Supabase instead of Firebase, behind a new notes:list channel.',
     evidenceIds,
     plan: {
+      conversationSummary:
+        'The team is moving notes storage to Supabase while keeping the existing notes screen and response shape.',
       behavior:
         'The renderer still calls api.notes(); the main process answers notes:list by selecting text from the Supabase notes table.',
       steps: [
@@ -92,6 +94,7 @@ function replacement(
         'Swap the firebase dependency for @supabase/supabase-js in package.json and delete src/firebase.ts.'
       ],
       preserved: ['api.notes() keeps returning Promise<string[]> of note text'],
+      implementationChoices: ['Organize the Supabase client and query helpers as the repository conventions suggest.'],
       acceptance: ['api.notes() returns the same note texts for the same rows'],
       files
     },
@@ -332,9 +335,12 @@ describe('replacing an indexed Firebase-backed component', () => {
         expect.arrayContaining(['add operation notes:list', `remove ${'notes:firebase-list'}`])
       )
       const brief = codingBrief(packet)
+      expect(brief.split('\n\n')[1]).toBe(`## Product context\n${v2.plan?.conversationSummary}`)
       expect(packet.targetComponentId).toBe(CALLER)
       for (const text of [
         '## Intended behavior',
+        '## System design',
+        'Organize the Supabase client and query helpers',
         'Files the plan names: `package.json`, `src/supabase.ts`.',
         '1. Add src/supabase.ts',
         'api.notes() keeps returning Promise<string[]> of note text',

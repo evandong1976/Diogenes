@@ -58,6 +58,7 @@ const insertAudit = (evidenceIds: string[]): Record<string, unknown> => ({
   summary: 'Audit every refund between submission and the charge request.',
   evidenceIds,
   plan: {
+    conversationSummary: 'Refund operations need a record of each request before money moves.',
     behavior: 'Every submitted refund is audited before the charge is requested.',
     steps: ['Add an audit step between submitRefund and requestRefund in src/refunds.ts.'],
     acceptance: ['A submitted refund produces one audit entry before the charge call.']
@@ -74,7 +75,11 @@ const insertAudit = (evidenceIds: string[]): Record<string, unknown> => ({
 })
 
 const proposeTurn = (sig = 'sig-a'): Step[] => [
-  () => [call('inspect_component', { componentId: 'submit' }, sig), call('read_source', { entityId: 'submit' })],
+  () => [
+    call('list_components', { query: 'submit refund' }, sig),
+    call('inspect_component', { componentId: 'submit' }),
+    call('read_source', { entityId: 'submit' })
+  ],
   (r) => [call('propose_graph_edit', insertAudit([lastEvidence(r)]), 'sig-b')],
   () => [{ text: 'I propose inserting an audit step on submit → charge.' }]
 ]
@@ -122,6 +127,7 @@ describe('DesignService', () => {
     expect(t.status).toBe('awaiting-approval')
     expect(t.selection).toMatchObject({ status: 'resolved', componentId: 'submit' })
     expect(t.toolCalls.map((c) => [c.name, c.ok])).toEqual([
+      ['list_components', true],
       ['inspect_component', true],
       ['read_source', true],
       ['propose_graph_edit', true]
@@ -131,6 +137,9 @@ describe('DesignService', () => {
     // The selection reached the model, and its thought signatures came back verbatim within the turn.
     expect(model.requests[0].contents.at(-1)!.parts[0].text).toContain('Selected component: submit')
     expect(model.requests[1].contents.flatMap((c) => c.parts).find((p) => p.functionCall)?.thoughtSignature).toBe('sig-a')
+    const lookup = model.requests[1].contents.flatMap((c) => c.parts)
+      .find((p) => p.functionResponse?.name === 'list_components')?.functionResponse?.response
+    expect(lookup?.components).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'submit' })]))
     expect(model.requests[2].toolMode).toBe('NONE')
 
     let state = await service.getProject('refunds')

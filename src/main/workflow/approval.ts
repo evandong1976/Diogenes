@@ -28,7 +28,7 @@ import type {
   RetryApprovedChange,
   SourceContext
 } from '../../shared/workflow'
-import { freezeCatalog } from './catalogApproval.ts'
+import { freezeCatalog, handoffPlan } from './catalogApproval.ts'
 
 const BEND_VERSION = 'bend 2.0.40'
 const PROOF_FILE = 'PROOF.bend'
@@ -137,7 +137,8 @@ function freezeRetry(
     ],
     toolchain: { bendVersion: BEND_VERSION, verifier: VERIFIER_ID, lawSourceDigest: '' },
     correlation,
-    sourceContext: sourceContext(repoDir, base, bindings.root)
+    sourceContext: sourceContext(repoDir, base, bindings.root),
+    ...(request.plan && { plan: handoffPlan(request.plan, [bindings.root]) })
   }
   packet.toolchain.lawSourceDigest = lawSourceDigest(after, packet)
 

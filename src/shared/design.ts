@@ -110,14 +110,19 @@ export type ProposalStatus = 'pending' | 'approved' | 'rejected' | 'stale'
  * Diogenes does not verify `acceptance`; only the workflow's local obligations accept a change.
  */
 export interface ProposalPlan {
+  /** Why the developer wants the change and the product decisions reached in the thread. */
+  conversationSummary?: string
   /** What the system does once the change lands. */
   behavior: string
-  /** Ordered implementation or migration steps. */
+  /** Ordered changes in terms of the system's components and behavior. */
   steps: string[]
   /** Behavior and connections that must stay true. */
   preserved: string[]
+  /** Decisions the developer left to the coding agent. */
+  implementationChoices?: string[]
   /** Checks a reviewer or the coding agent can run. Not proven by Diogenes. */
-  acceptance: string[] /**
+  acceptance: string[]
+  /**
    * Repository-relative files the steps need beyond the touched components' own source, such as
    * a root manifest or a new module. Each one is checked at approval and added to the scope.
    */

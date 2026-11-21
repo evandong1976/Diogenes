@@ -61,6 +61,8 @@ interface ApprovedChangeBase {
   /** Present on approvals frozen by the workflow. Hand-frozen fixture packets omit them. */
   correlation?: WorkflowCorrelation
   sourceContext?: SourceContext[]
+  /** The approved plan, when the proposal carried one. */
+  plan?: HandoffPlan
 }
 
 /**
@@ -69,9 +71,11 @@ interface ApprovedChangeBase {
  */
 export interface HandoffPlan {
   summary: string
+  conversationSummary?: string
   behavior: string
   steps: string[]
   preserved: string[]
+  implementationChoices?: string[]
   acceptance: string[]
   /** Extra files the plan named. Frozen packets list only those accepted into `scope`. */
   files?: string[]
@@ -117,8 +121,6 @@ export interface CatalogApprovedChange extends ApprovedChangeBase {
   /** Catalog-only changes, such as declared port contracts. They ask nothing of the code. */
   annotations: string[]
   toolchain: { verifier: string; typescript: string }
-  /** The approved plan, when the proposal carried one. */
-  plan?: HandoffPlan
 }
 
 /** Paths the candidate of `packet` may change. */
@@ -141,7 +143,7 @@ export interface ApprovalRequest {
   baseline: CatalogGraph
   patch: CatalogPatch
   approvedBy: string
-  /** The approved proposal's plan and evidence, frozen into catalog packets. */
+  /** The approved proposal's plan and evidence. */
   plan?: HandoffPlan
 }
 

@@ -160,6 +160,7 @@ export const proposalIsBehind = (proposal: Proposal, draft: DraftState | null): 
 
 /** Short verbs for the design harness's tools (src/main/design/tools.ts). Unknown names show as-is. */
 const TOOL_LABEL: Record<string, string> = {
+  list_components: 'Find components',
   inspect_component: 'Inspect',
   follow_connections: 'Follow',
   read_source: 'Read',

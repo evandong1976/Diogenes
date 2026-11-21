@@ -97,6 +97,13 @@ function scriptedModel(): ModelClient {
           name: 'propose_graph_edit',
           args: {
             summary: 'Allow a third refund attempt.',
+            plan: {
+              conversationSummary:
+                'The team wants transient refund failures to have one more chance to recover.',
+              behavior: 'A refund can retry a third time before becoming terminally failed.',
+              steps: ['Allow the refund worker to run a third attempt before reporting failure.'],
+              acceptance: ['Three consecutive failures end in the terminal failed state.']
+            },
             operations: handFrozen.patch.operations
           }
         }

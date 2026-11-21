@@ -481,20 +481,18 @@ export function turnPrompt(input: StartCodingRun, turn: CodingRunTurn): string {
   const finish = `When you are done, run exactly this command and confirm it printed DIOGENES_CANDIDATE_WRITTEN:\n${exportCommand(turn.exportToken)}`
   if (turn.kind === 'start') {
     const { handoff } = input
-    const list = (items: string[]): string =>
-      items.length ? items.map((i) => `- ${i}`).join('\n') : '- (none)'
+    const list = (items: string[]): string => items.map((i) => `- ${i}`).join('\n')
     return [
-      `Make the code change described below in the repository at ${workspaceRoot}.`,
-      `It holds the in-scope files of ${handoff.repository.fullName} at commit ${handoff.baseCommit}. Other files are not supplied.`,
-      '',
-      'Requested behavior:',
       handoff.intent,
       '',
-      'Guarantees that must hold:',
-      list(handoff.guarantees),
-      '',
-      'Decisions you may make yourself:',
-      list(handoff.latitude),
+      '## Coding workspace',
+      `Implement this plan in ${workspaceRoot}. It holds the in-scope files of ${handoff.repository.fullName} at commit ${handoff.baseCommit}.`,
+      ...(handoff.guarantees.length
+        ? ['', 'Guarantees that must hold:', list(handoff.guarantees)]
+        : []),
+      ...(handoff.latitude.length
+        ? ['', 'Decisions you may make yourself:', list(handoff.latitude)]
+        : []),
       '',
       'Change only these paths:',
       list(handoff.scope),
