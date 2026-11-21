@@ -19,6 +19,8 @@ function App(): React.JSX.Element {
   const [repo, setRepo] = useState<GithubRepo | null>(null)
   const [creating, setCreating] = useState(false)
   const [newRepo, setNewRepo] = useState<GithubRepo | null>(null)
+  // The bundled example can be opened from sign-in without a GitHub account or repo.
+  const [exampleOpen, setExampleOpen] = useState(false)
   // Code logic opens first: it works from the saved example without any API calls.
   const [level, setLevel] = useState(2)
   // Held here so switching levels keeps each level's diagram.
@@ -49,6 +51,14 @@ function App(): React.JSX.Element {
         lastIndexed: null
       })
     )
+  }
+
+  const openExample = (): void => {
+    void window.api.gemini.useFixture()
+    setLogic(initialLogic)
+    setLevel(2)
+    setView('canvas')
+    setExampleOpen(true)
   }
 
   useEffect(() => {
@@ -86,65 +96,80 @@ function App(): React.JSX.Element {
   }
 
   if (user === undefined) return <div className="screen dg-label">Loading…</div>
-  if (!user) return <SignIn onSignedIn={setUser} />
-  if (newRepo) return <NewProject repo={newRepo} onExit={() => setNewRepo(null)} />
-  if (creating)
-    return (
-      <CreateRepo
-        user={user}
-        onCreated={(r) => {
-          setCreating(false)
-          setNewRepo(r)
-        }}
-        onCancel={() => setCreating(false)}
-      />
-    )
-  if (!repo)
-    return (
-      <RepoPicker
-        user={user}
-        onPick={pickRepo}
-        onNew={() => setCreating(true)}
-        onSignOut={signOut}
-      />
-    )
+  if (!exampleOpen) {
+    if (!user) return <SignIn onSignedIn={setUser} onOpenExample={openExample} />
+    if (newRepo) return <NewProject repo={newRepo} onExit={() => setNewRepo(null)} />
+    if (creating)
+      return (
+        <CreateRepo
+          user={user}
+          onCreated={(r) => {
+            setCreating(false)
+            setNewRepo(r)
+          }}
+          onCancel={() => setCreating(false)}
+        />
+      )
+    if (!repo)
+      return (
+        <RepoPicker
+          user={user}
+          onPick={pickRepo}
+          onNew={() => setCreating(true)}
+          onSignOut={signOut}
+        />
+      )
+  }
+
+  // Example mode has no repo: only the Code logic level, on the bundled fixture.
+  const shownRepo = exampleOpen ? null : repo
 
   return (
     <div className="shell">
       <nav className="titlebar">
-        <button className="dg-btn dg-btn--ghost" onClick={() => setRepo(null)}>
-          ← {repo.fullName}
+        <button
+          className="dg-btn dg-btn--ghost"
+          onClick={() => {
+            if (exampleOpen) setExampleOpen(false)
+            else setRepo(null)
+          }}
+        >
+          ← {shownRepo?.fullName ?? 'Back to sign in'}
         </button>
-        <div className="segmented" role="group" aria-label="Level">
-          {LEVELS.map((name, i) => (
-            <button key={name} onClick={() => setLevel(i)} aria-pressed={level === i}>
-              L{i + 1} {name}
-            </button>
-          ))}
-        </div>
-        <div className="segmented" role="group" aria-label="View">
-          <button onClick={() => setView('canvas')} aria-pressed={view === 'canvas'}>
-            Canvas
-          </button>
-          <button onClick={() => setView('catalog')} aria-pressed={view === 'catalog'}>
-            Catalog
-          </button>
-        </div>
+        {shownRepo && (
+          <>
+            <div className="segmented" role="group" aria-label="Level">
+              {LEVELS.map((name, i) => (
+                <button key={name} onClick={() => setLevel(i)} aria-pressed={level === i}>
+                  L{i + 1} {name}
+                </button>
+              ))}
+            </div>
+            <div className="segmented" role="group" aria-label="View">
+              <button onClick={() => setView('canvas')} aria-pressed={view === 'canvas'}>
+                Canvas
+              </button>
+              <button onClick={() => setView('catalog')} aria-pressed={view === 'catalog'}>
+                Catalog
+              </button>
+            </div>
+          </>
+        )}
       </nav>
-      {view === 'catalog' ? (
-        <RepositoryCatalog key={repo.id} repoId={repo.id} level={level} />
+      {shownRepo && view === 'catalog' ? (
+        <RepositoryCatalog key={shownRepo.id} repoId={shownRepo.id} level={level} />
       ) : (
         <main className="workspace">
-          {level === 2 ? (
+          {!shownRepo || level === 2 ? (
             <CodeLogicLevel
-              repo={repo}
+              repo={shownRepo}
               logic={logic}
               onLogicChange={setLogic}
-              catalog={indexed?.catalog ?? null}
+              catalog={shownRepo ? (indexed?.catalog ?? null) : null}
             />
           ) : (
             <ArchitectureLevel
-              repo={repo}
+              repo={shownRepo}
               level={level === 0 ? 'infrastructure' : 'integrations'}
               architecture={architecture}
               onArchitectureChange={setArchitecture}
@@ -158,8 +183,8 @@ function App(): React.JSX.Element {
         <span>
           L{level + 1} · {LEVELS[level]}
         </span>
-        <span>{repo.defaultBranch}</span>
-        <span>{indexLabel(indexStatus)}</span>
+        <span>{shownRepo?.defaultBranch ?? 'Bundled example'}</span>
+        {shownRepo && <span>{indexLabel(indexStatus)}</span>}
       </footer>
     </div>
   )
