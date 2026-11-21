@@ -63,7 +63,7 @@ The renderer has no Node access. Anything touching disk or network goes in `main
 
 ## Gemini background-job fixture
 
-Launch Electron with `GEMINI_API_KEY` set in its environment. The main process reads the key and calls Gemini. The renderer uses the typed preload API.
+Set `GEMINI_API_KEY` in the launch environment or the Git-ignored `.env` before running `pnpm dev`. The main process calls Gemini through the typed preload API.
 
 ```ts
 const graph = await window.api.gemini.buildCurrentGraph()
@@ -78,3 +78,7 @@ const result = await window.api.gemini.proposeEdit(graph, png)
 Run the live proof with `node scripts/prove-gemini.ts` on Node 22.18+ with the key in the shell environment. It sends [the retry annotation](fixtures/background-job/retry-once.png) and [an ambiguous annotation](fixtures/background-job/ambiguous.png) for the same fixture. It checks that the retry has success and terminal failure outcomes, and that the ambiguous annotation yields a question.
 
 The [validated example JSON](fixtures/background-job/example.json) captures all three live responses. Run `node scripts/prove-gemini.ts --check-example` to validate those examples and exercise invalid-response checks without API calls.
+
+## Managed agent demo
+
+Select **Try example** on the sign-in screen, then **Saved proposal**, **Approve**, and **Run managed agent**. Diogenes sends the bundled TypeScript fixture and its acceptance checks to a fresh Antigravity sandbox. The canvas shows the remote test results and the proposed code diff. The run uses the workshop Gemini key.

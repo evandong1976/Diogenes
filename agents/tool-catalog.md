@@ -29,6 +29,10 @@ Types are in [src/shared/indexing.ts](../src/shared/indexing.ts). The main proce
 
 `window.api.catalog.preview(patch)` validates ordered catalog operations against the authorized, observed snapshot and returns a new draft graph or a structured rejection. It leaves the observed snapshot on disk intact. To preview several edits, submit the combined operation list against the observed revision. The renderer uses this bridge to preview adding components, unlinking connections and deleting components. The same contract can be used by an agent tool that proposes catalog edits.
 
+## Managed coding agent
+
+`window.api.gemini.runManagedRetry(graph, proposal)` runs after the user approves a retry-once edit on the bundled background-job example. The main process sends the validated edit and bundled fixture to Antigravity with Gemini 4 Carbon. It returns the remote acceptance checks and diff through the preload bridge. [Fixture verification](../fixtures/background-job/verify-retry.mjs).
+
 ## Proposed tools
 
 These are ownership targets for teammates. Add a callable name here when its interface exists.

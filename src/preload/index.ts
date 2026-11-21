@@ -20,7 +20,9 @@ const gemini: DiogenesApi['gemini'] = {
   useFixture: () => ipcRenderer.invoke(geminiChannels.useFixture),
   buildRepoGraph: (repo) => ipcRenderer.invoke(geminiChannels.buildRepoGraph, repo),
   buildArchitecture: (repo) => ipcRenderer.invoke(geminiChannels.buildArchitecture, repo),
-  proposeEdit: (graph, png) => ipcRenderer.invoke(geminiChannels.proposeEdit, graph, png)
+  proposeEdit: (graph, png) => ipcRenderer.invoke(geminiChannels.proposeEdit, graph, png),
+  runManagedRetry: (graph, proposal) =>
+    ipcRenderer.invoke(geminiChannels.runManagedRetry, graph, proposal)
 }
 
 // Electron prefixes main-process errors with "Error invoking remote method '<channel>': Error: ".
