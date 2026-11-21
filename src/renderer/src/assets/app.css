@@ -1,0 +1,137 @@
+/* App layout only. Colors, type and controls come from design/tokens.css (--dg-*, .dg-*). */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+h1,
+h2,
+p,
+ul {
+  margin: 0;
+}
+ul {
+  list-style: none;
+  padding: 0;
+}
+a {
+  color: var(--dg-info);
+}
+:focus-visible {
+  outline: 1px solid var(--dg-accent);
+  outline-offset: 1px;
+}
+.muted {
+  color: var(--dg-text-2);
+}
+.error {
+  color: var(--dg-danger);
+}
+.title {
+  font: 700 16px/1.2 var(--dg-font-ui);
+}
+.display {
+  font: 700 28px/1.1 var(--dg-font-ui);
+  letter-spacing: -0.02em;
+}
+
+/* Centered single-task screens: sign-in, repo picker */
+.screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--dg-space-5);
+  width: 360px;
+  margin: 0 auto;
+}
+.screen.wide {
+  justify-content: flex-start;
+  width: 640px;
+  padding: var(--dg-space-7) 0;
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dg-space-4);
+}
+.code {
+  font: 400 32px/1 var(--dg-font-bit);
+  letter-spacing: 0.15em;
+  color: var(--dg-accent);
+}
+
+/* Repo list */
+.repos {
+  border: 1px solid var(--dg-border);
+}
+.repos li + li {
+  border-top: 1px solid var(--dg-border);
+}
+.repos button {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--dg-space-3) var(--dg-space-4);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--dg-space-1) var(--dg-space-4);
+  cursor: pointer;
+}
+.repos button:hover,
+.repos button:focus-visible {
+  background: var(--dg-surface-3);
+}
+.repos .name {
+  font-weight: 600;
+}
+.repos .dg-data {
+  grid-column: 1 / -1;
+}
+
+/* Workspace shell */
+.shell {
+  height: 100vh;
+  display: grid;
+  grid-template-rows: var(--dg-titlebar-h) 1fr var(--dg-statusbar-h);
+}
+.titlebar,
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--dg-space-4);
+  padding: 0 var(--dg-space-4);
+  background: var(--dg-surface-1);
+}
+.titlebar {
+  border-bottom: 1px solid var(--dg-border);
+}
+.statusbar {
+  border-top: 1px solid var(--dg-border);
+}
+.segmented {
+  display: flex;
+  border: 1px solid var(--dg-border-strong);
+  border-radius: var(--dg-radius-control);
+}
+.segmented button {
+  height: calc(var(--dg-control-h) - 2px);
+  padding: 0 var(--dg-space-4);
+  background: transparent;
+  border: 0;
+  color: var(--dg-text-2);
+  font: 600 12px/1 var(--dg-font-ui);
+  cursor: pointer;
+}
+.segmented button + button {
+  border-left: 1px solid var(--dg-border-strong);
+}
+.segmented button[aria-pressed='true'] {
+  background: var(--dg-selected);
+  color: var(--dg-text);
+}
+.canvas-empty {
+  display: grid;
+  place-items: center;
+}

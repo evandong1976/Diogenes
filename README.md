@@ -51,6 +51,8 @@ The team shares one GitHub OAuth App. To create one: GitHub → Settings → Dev
 | `src/preload`  | The typed bridge exposing main-process APIs to the UI               |
 | `src/renderer` | React UI: the canvas and level navigation                           |
 
+UI follows the design system in `design/` (see `design/README.md`). Coding agents get the rules from `AGENTS.md`.
+
 The renderer has no Node access. Anything touching disk or network goes in `main` and is exposed through `preload`.
 
 ## Scripts

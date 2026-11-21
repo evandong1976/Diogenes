@@ -20,25 +20,33 @@ function App(): React.JSX.Element {
     setUser(null)
   }
 
-  if (user === undefined) return <div className="screen muted">Loading…</div>
+  if (user === undefined) return <div className="screen dg-label">Loading…</div>
   if (!user) return <SignIn onSignedIn={setUser} />
   if (!repo) return <RepoPicker user={user} onPick={setRepo} onSignOut={signOut} />
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <nav className="row" style={{ gap: 8, padding: 12, borderBottom: '1px solid #333' }}>
-        <button className="link" onClick={() => setRepo(null)}>
+    <div className="shell">
+      <nav className="titlebar">
+        <button className="dg-btn dg-btn--ghost" onClick={() => setRepo(null)}>
           ← {repo.fullName}
         </button>
-        {LEVELS.map((name, i) => (
-          <button key={name} onClick={() => setLevel(i)} aria-pressed={level === i}>
-            L{i + 1} · {name}
-          </button>
-        ))}
+        <div className="segmented" role="group" aria-label="Level">
+          {LEVELS.map((name, i) => (
+            <button key={name} onClick={() => setLevel(i)} aria-pressed={level === i}>
+              L{i + 1} {name}
+            </button>
+          ))}
+        </div>
       </nav>
-      <main style={{ flex: 1, display: 'grid', placeItems: 'center', opacity: 0.5 }}>
-        Canvas: {LEVELS[level]}
+      <main className="dg-canvas canvas-empty">
+        <span className="dg-label">Nothing parsed yet</span>
       </main>
+      <footer className="statusbar dg-data">
+        <span>
+          L{level + 1} · {LEVELS[level]}
+        </span>
+        <span>{repo.defaultBranch}</span>
+      </footer>
     </div>
   )
 }

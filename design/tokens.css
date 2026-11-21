@@ -1,5 +1,6 @@
 /* Diogenes design tokens v0.1 — import once at the app root. */
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Pixelify+Sans:wght@400;500;600&display=swap");
+/* Fonts are bundled, not fetched (the app CSP blocks remote fonts): the renderer imports
+   @fontsource-variable/manrope and @fontsource/pixelify-sans in src/renderer/src/main.tsx. */
 /* OffBit: drop the font files in ./fonts and uncomment.
 @font-face { font-family: "OffBit"; src: url("./fonts/OffBit-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; } */
 
@@ -23,7 +24,7 @@
   --dg-connector: #59614B;
   --dg-grid: #181C13;
 
-  --dg-font-ui: "Manrope", sans-serif;
+  --dg-font-ui: "Manrope Variable", "Manrope", sans-serif;
   --dg-font-bit: "OffBit", "Pixelify Sans", monospace;
 
   --dg-space-1: 2px; --dg-space-2: 4px; --dg-space-3: 6px; --dg-space-4: 8px;
