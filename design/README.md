@@ -8,7 +8,8 @@ A dense, technical dark UI in the spirit of Factory / Conductor: hairlines inste
 - `tokens.json` — source of truth for color, type, spacing, radius, sizes.
 - `tokens.css` — the same tokens as CSS variables (`--dg-*`) plus base classes
   (`.dg-btn`, `.dg-input`, `.dg-pill`, `.dg-kbd`, `.dg-label`, `.dg-canvas`, `.dg-node`).
-  Import it once in the renderer, e.g. `import '../../../design/tokens.css'` from `src/renderer/src/main.tsx`.
+  Imported once in `src/renderer/src/main.tsx`. Fonts are bundled there (`@fontsource/manrope`,
+  `@fontsource/pixelify-sans`); don't add remote font imports, the app's CSP blocks them.
 - `reference/canvas.html` — the main canvas screen (open in a browser).
 - `reference/system-sheet.html` — tokens and components on one sheet.
 - `reference/graph-elements.html` — node states, field types, port colors, edges.

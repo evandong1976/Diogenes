@@ -38,7 +38,7 @@ function App(): React.JSX.Element {
           ))}
         </div>
       </nav>
-      <main className="dg-canvas canvas-empty">
+      <main className="dg-canvas--dots canvas-empty">
         <span className="dg-label">Nothing parsed yet</span>
       </main>
       <footer className="statusbar dg-data">

@@ -1,5 +1,4 @@
 /* Diogenes design tokens v0.2 — import once at the app root. */
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Pixelify+Sans:wght@400;500;600&display=swap");
 /* OffBit: drop the font files in ./fonts and uncomment.
 @font-face { font-family: "OffBit"; src: url("./fonts/OffBit-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; } */
 
