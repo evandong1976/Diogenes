@@ -59,6 +59,10 @@ try {
     mkdirSync(dirname(join(tmp, path)), { recursive: true })
     cpSync(join(workspace, path), join(tmp, path))
   }
+  // Re-hash every file from its contents. Otherwise git trusts the index's cached stat data: an
+  // edit with the same size and the same mtime second as the base copy (a fast edit, or a copy
+  // that keeps the source mtime, as on Windows) looks unchanged and drops out of the patch.
+  git(tmp, ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '.'])
   git(tmp, ['add', '-A'])
   const patch = git(tmp, ['diff', '--cached', '--binary', '--full-index', '--no-ext-diff', 'HEAD'])
   const sha256 = createHash('sha256').update(patch).digest('hex')
