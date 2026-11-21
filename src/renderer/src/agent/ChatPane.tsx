@@ -529,7 +529,7 @@ function ProposalCard({
             </li>
           ))}
           {preview.connections.map((c) => (
-            <li key={`e-${c.id}`} title={c.id} data-change={c.change}>
+            <li key={`e-${c.change}-${c.id}`} title={c.id} data-change={c.change}>
               <span className="chat-proposal__mark">{CHANGE_MARK[c.change]}</span>
               {c.from} → {c.to}
               <span className="chat__muted"> · {c.kind}</span>

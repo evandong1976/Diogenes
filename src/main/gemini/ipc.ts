@@ -1,4 +1,5 @@
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
+import { join } from 'node:path'
 import job from '../../../fixtures/background-job/source/job.ts?raw'
 import worker from '../../../fixtures/background-job/source/worker.ts?raw'
 import verifyRetry from '../../../fixtures/background-job/verify-retry.mjs?raw'
@@ -14,6 +15,7 @@ import {
 } from '../../shared/gemini'
 import { buildAppFlow, buildRepoGraph, filesForChange, proposeEdit, setCurrentFiles } from './repo'
 import { createGeminiService } from './service'
+import { loadAppFlow, saveAppFlow } from './flowStore'
 import { runManagedChange, runManagedRetry } from './managed-agent'
 
 const fixtureFiles = [
@@ -85,7 +87,18 @@ export function registerGeminiHandlers(): void {
   ipcMain.handle(geminiChannels.buildRepoGraph, (_event, repo: unknown) =>
     buildRepoGraph(toRepo(repo))
   )
-  ipcMain.handle(geminiChannels.buildAppFlow, (_event, repo: unknown) => buildAppFlow(toRepo(repo)))
+  const flowDir = join(app.getPath('userData'), 'app-flows')
+  ipcMain.handle(geminiChannels.loadAppFlow, (_event, repoId: unknown) => {
+    if (!Number.isSafeInteger(repoId) || (repoId as number) <= 0) return null
+    return loadAppFlow(flowDir, repoId as number)
+  })
+  ipcMain.handle(geminiChannels.buildAppFlow, async (_event, value: unknown) => {
+    const repo = toRepo(value)
+    const flow = await buildAppFlow(repo)
+    // Saving is a convenience: a failed write still returns the fresh map.
+    if (repo.id) await saveAppFlow(flowDir, repo.id, flow).catch(() => {})
+    return flow
+  })
   ipcMain.handle(geminiChannels.proposeEdit, (_event, graph: unknown, png: unknown) =>
     proposeEdit(graph, png)
   )

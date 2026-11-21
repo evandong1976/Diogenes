@@ -151,6 +151,8 @@ export interface DiogenesApi {
     buildRepoGraph(repo: RepoRef): Promise<RepoGraph>
     /** The app canvas, inferred by Gemini from the index, file tree, manifests and schemas. */
     buildAppFlow(repo: RepoRef): Promise<AppFlow>
+    /** The map last built for this GitHub repo ID, saved on disk; null when there is none. */
+    loadAppFlow(repoId: number): Promise<AppFlow | null>
     proposeEdit(graph: CurrentGraph, png: Uint8Array): Promise<ProposalResult>
     runManagedRetry(graph: CurrentGraph, proposal: ProposedEdit): Promise<ManagedAgentResult>
     /**
@@ -170,6 +172,7 @@ export const geminiChannels = {
   useFixture: 'gemini:use-fixture',
   buildRepoGraph: 'gemini:build-repo-graph',
   buildAppFlow: 'gemini:build-app-flow',
+  loadAppFlow: 'gemini:load-app-flow',
   proposeEdit: 'gemini:propose-edit',
   runManagedRetry: 'gemini:run-managed-retry',
   runManagedChange: 'gemini:run-managed-change',
