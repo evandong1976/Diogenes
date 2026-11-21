@@ -530,8 +530,7 @@ function propose(ctx: ToolContext, args: Record<string, unknown>): ToolOutcome {
     proposal: { summary, patch, preview, evidence, plan },
     response: {
       status: 'awaiting developer approval',
-      preview,
-      note: 'Recorded. Explain the change and its evidence to the developer; do not call more tools.'
+      preview
     }
   }
 }

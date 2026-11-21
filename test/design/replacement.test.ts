@@ -212,15 +212,13 @@ describe('replacing an indexed Firebase-backed component', () => {
         () => [{ text: 'notes:firebase-list is served from src/firebase.ts. Plan: …' }],
         // Turn 2: first proposal, citing turn 1's evidence; no extra files yet.
         () => [call('propose_graph_edit', replacement(baseline, [evidenceFrom(requests)], []))],
-        () => [{ text: 'Proposed the replacement.' }],
         // Turn 3: the developer asks for the manifest and the new client file to be in scope.
         () => [
           call(
             'propose_graph_edit',
             replacement(baseline, [evidenceFrom(requests)], ['package.json', 'src/supabase.ts'])
           )
-        ],
-        () => [{ text: 'Revised: package.json and src/supabase.ts are in scope.' }]
+        ]
       ]
       const model: ModelClient = {
         async generate(request) {

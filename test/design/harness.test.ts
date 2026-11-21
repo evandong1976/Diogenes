@@ -80,8 +80,7 @@ const proposeTurn = (sig = 'sig-a'): Step[] => [
     call('inspect_component', { componentId: 'submit' }),
     call('read_source', { entityId: 'submit' })
   ],
-  (r) => [call('propose_graph_edit', insertAudit([lastEvidence(r)]), 'sig-b')],
-  () => [{ text: 'I propose inserting an audit step on submit → charge.' }]
+  (r) => [call('propose_graph_edit', insertAudit([lastEvidence(r)]), 'sig-b')]
 ]
 
 describe('DesignService', () => {
@@ -140,7 +139,8 @@ describe('DesignService', () => {
     const lookup = model.requests[1].contents.flatMap((c) => c.parts)
       .find((p) => p.functionResponse?.name === 'list_components')?.functionResponse?.response
     expect(lookup?.components).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'submit' })]))
-    expect(model.requests[2].toolMode).toBe('NONE')
+    expect(model.requests).toHaveLength(2)
+    expect(t.reply).toContain('Every submitted refund is audited before the charge is requested.')
 
     let state = await service.getProject('refunds')
     const proposal = state.proposals[0]
