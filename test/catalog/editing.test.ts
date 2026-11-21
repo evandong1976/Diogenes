@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { applyCatalogPatch } from '../../src/main/catalog/editing'
-import type { CatalogGraph, CatalogOperation, CatalogPatch } from '../../src/shared/catalog'
+import type {
+  CatalogGraph,
+  CatalogNode,
+  CatalogProtocol,
+  CatalogOperation,
+  CatalogPatch
+} from '../../src/shared/catalog'
 import { catalogFixture, refundCall, refundOperation } from '../fixtures/catalog/example'
 
 const patch = (graph: CatalogGraph, ...operations: CatalogOperation[]): CatalogPatch => ({
@@ -37,7 +43,16 @@ describe('applyCatalogPatch', () => {
         { type: 'disconnect', edgeId: 'submit-audit' },
         { type: 'disconnect', edgeId: 'audit-charge' },
         { type: 'delete', nodeId: 'audit' },
-        { type: 'connect', edge: refundCall('submit-charge', 'submit', 'charge') }
+        { type: 'connect', edge: refundCall('submit-charge', 'submit', 'charge') },
+        {
+          type: 'connect',
+          edge: {
+            ...refundCall('uses', 'submit', 'request'),
+            kind: 'depends_on',
+            from: { nodeId: 'submit' },
+            to: { nodeId: 'request' }
+          }
+        }
       )
     )
     expect(removed.ok && removed.graph.nodes.map((n) => n.id)).toEqual([
@@ -52,10 +67,16 @@ describe('applyCatalogPatch', () => {
     const before = structuredClone(graph)
     const rpc = refundOperation('audit', 'Audit refund')
     rpc.ports[0].protocol = 'rpc'
+    const over = (id: string, protocol: CatalogProtocol): CatalogNode => {
+      const node = refundOperation(id, id)
+      node.ports.forEach((p) => (p.protocol = protocol))
+      return node
+    }
+    const retyped: CatalogNode = { ...graph.nodes[0], kind: 'generic', properties: {} }
 
-    const cases: [CatalogPatch, string, number | undefined][] = [
-      [{ ...patch(graph, insertAudit), baseRevision: 3 }, 'stale', undefined],
-      [patch(graph, { ...insertAudit, node: rpc }), 'incompatible', 0],
+    const cases: [CatalogPatch, string, number | undefined, string][] = [
+      [{ ...patch(graph, insertAudit), baseRevision: 3 }, 'stale', undefined, 'revision'],
+      [patch(graph, { ...insertAudit, node: rpc }), 'incompatible', 0, 'Protocol'],
       [
         patch(
           graph,
@@ -63,12 +84,38 @@ describe('applyCatalogPatch', () => {
           { type: 'delete', nodeId: 'charge' }
         ),
         'dangling',
-        1
-      ]
+        1,
+        'edge submit-charge'
+      ],
+      [
+        patch(
+          graph,
+          { type: 'create', node: over('page', 'http') },
+          { type: 'create', node: over('next', 'http') },
+          { type: 'connect', edge: { ...refundCall('nav', 'page', 'next'), kind: 'navigates_to' } }
+        ),
+        'incompatible',
+        2,
+        'navigates_to cannot carry http'
+      ],
+      [
+        patch(
+          graph,
+          { type: 'create', node: over('loader', 'data') },
+          { type: 'create', node: over('store', 'data') },
+          { type: 'connect', edge: { ...refundCall('read', 'loader', 'store'), kind: 'reads' } }
+        ),
+        'incompatible',
+        2,
+        'must target a resource'
+      ],
+      [patch(graph, { type: 'delete', nodeId: 'request' }), 'dangling', 0, 'Deleting contract'],
+      [patch(graph, { type: 'update', node: retyped }), 'dangling', 0, 'Retyping contract']
     ]
-    for (const [input, code, operationIndex] of cases) {
+    for (const [input, code, operationIndex, reason] of cases) {
       const result = applyCatalogPatch(graph, input)
       expect(result.ok ? null : result.issue).toMatchObject({ code, operationIndex })
+      expect(result.ok || result.issue.message).toContain(reason)
     }
     expect(graph).toEqual(before)
   })

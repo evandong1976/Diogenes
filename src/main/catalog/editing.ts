@@ -49,6 +49,16 @@ const PROTOCOLS: readonly CatalogProtocol[] = [
   'navigation',
   'state'
 ]
+/** Protocols each typed relation may carry. Relations not listed accept any matching protocol. */
+const RELATION_PROTOCOLS: Partial<Record<CatalogEdgeKind, readonly CatalogProtocol[]>> = {
+  calls: ['local', 'electron-ipc', 'http', 'rpc', 'cli'],
+  publishes_to: ['event'],
+  subscribes_to: ['event'],
+  reads: ['data'],
+  writes: ['data'],
+  triggers: ['schedule', 'event'],
+  navigates_to: ['navigation']
+}
 const RESOLUTIONS: readonly CatalogNode['resolution'][] = [
   'bound',
   'declared',
@@ -122,11 +132,14 @@ function apply(draft: CatalogGraph, op: CatalogOperation): void {
       const index = draft.nodes.findIndex((n) => n.id === op.node.id)
       if (index < 0) fail('missing', `Node ${op.node.id} does not exist`, op.node.id)
       checkNode(draft, op.node)
+      if (draft.nodes[index].kind === 'dataContract' && op.node.kind !== 'dataContract') {
+        checkContractUnused(draft, op.node.id, 'Retyping')
+      }
       const dependents = draft.edges.filter(
         (e) => e.from.nodeId === op.node.id || e.to.nodeId === op.node.id
       )
       const wereCompatible = dependents.filter(
-        (e) => e.kind !== 'contains' && portsCompatible(draft, e)
+        (e) => e.kind !== 'contains' && relationValid(draft, e)
       )
       draft.nodes[index] = structuredClone(op.node)
       checkDependentEdges(draft, op.node.id, dependents, wereCompatible)
@@ -168,6 +181,7 @@ function apply(draft: CatalogGraph, op: CatalogOperation): void {
     case 'delete': {
       if (!findNode(draft, op.nodeId))
         fail('missing', `Node ${op.nodeId} does not exist`, op.nodeId)
+      checkContractUnused(draft, op.nodeId, 'Deleting')
       const attached = draft.edges.find(
         (e) => e.from.nodeId === op.nodeId || e.to.nodeId === op.nodeId
       )
@@ -242,12 +256,27 @@ function checkDependentEdges(
       }
     }
   }
-  for (const edge of wereCompatible) checkPorts(draft, edge)
+  for (const edge of wereCompatible) checkRelation(draft, edge)
 }
 
-function portsCompatible(draft: CatalogGraph, edge: CatalogEdge): boolean {
+/** A Data Contract cannot stop being one while a port on another node still references it. */
+function checkContractUnused(draft: CatalogGraph, contractId: string, action: string): void {
+  for (const node of draft.nodes) {
+    const port =
+      node.id === contractId ? undefined : node.ports.find((p) => p.contractId === contractId)
+    if (port) {
+      fail(
+        'dangling',
+        `${action} contract ${contractId} would orphan port ${node.id}.${port.id}; update that port first`,
+        node.id
+      )
+    }
+  }
+}
+
+function relationValid(draft: CatalogGraph, edge: CatalogEdge): boolean {
   try {
-    checkPorts(draft, edge)
+    checkRelation(draft, edge)
     return true
   } catch (error) {
     if (error instanceof PatchError) return false
@@ -266,7 +295,7 @@ function connect(draft: CatalogGraph, edge: CatalogEdge): void {
       fail('missing', `Edge ${edge.id} endpoint ${end.nodeId} does not exist`, edge.id)
   }
   if (edge.kind === 'contains') checkContainment(draft, edge)
-  else checkPorts(draft, edge)
+  else checkRelation(draft, edge)
   draft.edges.push(structuredClone(edge))
 }
 
@@ -290,7 +319,29 @@ function checkContainment(draft: CatalogGraph, edge: CatalogEdge): void {
   }
 }
 
-function checkPorts(draft: CatalogGraph, edge: CatalogEdge): void {
+/** Typed relation semantics on top of port compatibility. contains is checked separately. */
+function checkRelation(draft: CatalogGraph, edge: CatalogEdge): void {
+  // depends_on may be a plain node-level dependency, e.g. a package import.
+  if (edge.kind === 'depends_on' && !edge.from.portId && !edge.to.portId) return
+  const protocol = checkPorts(draft, edge)
+  const allowed = RELATION_PROTOCOLS[edge.kind]
+  if (allowed && !allowed.includes(protocol)) {
+    fail(
+      'incompatible',
+      `${edge.kind} cannot carry ${protocol}; expected ${allowed.join(' or ')}`,
+      edge.id
+    )
+  }
+  if (
+    (edge.kind === 'reads' || edge.kind === 'writes') &&
+    findNode(draft, edge.to.nodeId)?.kind !== 'resource'
+  ) {
+    fail('incompatible', `${edge.kind} must target a resource, not ${edge.to.nodeId}`, edge.id)
+  }
+}
+
+/** Returns the shared protocol of two compatible ports. */
+function checkPorts(draft: CatalogGraph, edge: CatalogEdge): CatalogProtocol {
   const from = findPort(draft, edge.from)
   const to = findPort(draft, edge.to)
   if (!from)
@@ -342,6 +393,7 @@ function checkPorts(draft: CatalogGraph, edge: CatalogEdge): void {
       )
     }
   }
+  return from.protocol
 }
 
 function removeEdge(draft: CatalogGraph, edgeId: string): CatalogEdge {
