@@ -34,6 +34,8 @@ export type ProposalResult = ProposedEdit | { kind: 'clarification'; question: s
 
 /** A GitHub repository and the branch to read. */
 export interface RepoRef {
+  /** GitHub repo ID. When set and the repo is indexed, the index is used as evidence. */
+  id?: number
   fullName: string
   branch: string
 }
@@ -86,6 +88,11 @@ export interface ArchitectureGraph {
 export interface Architecture {
   infrastructure: ArchitectureGraph
   integrations: ArchitectureGraph
+  /**
+   * Where the diagram came from. `index`: components group indexed folders and packages, and
+   * connections are counted from indexed imports and calls. `files`: Gemini read the file list.
+   */
+  evidence?: { source: 'index'; sha: string; partial: boolean } | { source: 'files' }
 }
 
 /** A rectangle in window CSS pixels. */

@@ -3,7 +3,17 @@ import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
-  main: {},
+  main: {
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/main/index.ts'),
+          // Forked child process that runs repository indexing off the main thread.
+          'indexer-worker': resolve('src/main/indexing/worker.ts')
+        }
+      }
+    }
+  },
   preload: {},
   renderer: {
     resolve: {

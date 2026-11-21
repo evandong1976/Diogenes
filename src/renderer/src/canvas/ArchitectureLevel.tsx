@@ -1,17 +1,30 @@
 import { useMemo, useState } from 'react'
 import type { GithubRepo } from '../../../preload'
 import type { Architecture } from '../../../shared/gemini'
+import type { IndexStatus } from '../../../shared/indexing'
 import { DiagramCanvas } from './DiagramCanvas'
 import { architectureDiagram } from './diagrams'
+import { indexRunning } from './indexStatus'
+
+type Level = 'infrastructure' | 'integrations'
 
 interface Props {
   repo: GithubRepo
-  level: keyof Architecture
+  level: Level
   architecture: Architecture | null
   onArchitectureChange(next: Architecture): void
+  indexStatus: IndexStatus | null
 }
 
-const LEVEL_NAMES: Record<keyof Architecture, string> = {
+function evidenceLabel(architecture: Architecture): string {
+  const e = architecture.evidence
+  if (e?.source === 'index') {
+    return `From index ${e.sha.slice(0, 7)}${e.partial ? ' (partial)' : ''} · connections counted from code`
+  }
+  return 'From file list · no index yet'
+}
+
+const LEVEL_NAMES: Record<Level, string> = {
   infrastructure: 'Infrastructure',
   integrations: 'Integrations'
 }
@@ -21,8 +34,10 @@ export function ArchitectureLevel({
   repo,
   level,
   architecture,
-  onArchitectureChange
+  onArchitectureChange,
+  indexStatus
 }: Props): React.JSX.Element {
+  const waiting = indexRunning(indexStatus)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [version, setVersion] = useState(0)
@@ -38,6 +53,7 @@ export function ArchitectureLevel({
     try {
       onArchitectureChange(
         await window.api.gemini.buildArchitecture({
+          id: repo.id,
           fullName: repo.fullName,
           branch: repo.defaultBranch
         })
@@ -54,15 +70,19 @@ export function ArchitectureLevel({
     <div className="level">
       <div className="toolbar row">
         <span className="dg-label">
-          {LEVEL_NAMES[level]} · {architecture ? repo.fullName : 'Not analyzed yet'}
+          {LEVEL_NAMES[level]} · {architecture ? evidenceLabel(architecture) : 'Not analyzed yet'}
         </span>
-        <button className="dg-btn" onClick={analyze} disabled={busy}>
-          {architecture ? 'Re-analyze' : `Analyze ${repo.fullName}`}
+        <button className="dg-btn" onClick={analyze} disabled={busy || waiting}>
+          {waiting
+            ? 'Waiting for index…'
+            : architecture
+              ? 'Re-analyze'
+              : `Analyze ${repo.fullName}`}
         </button>
       </div>
       {(busy || error) && (
         <p className={error ? 'notice error' : 'notice dg-data'}>
-          {error ?? 'Reading file list and manifests…'}
+          {error ?? 'Grouping the repo into components…'}
         </p>
       )}
       {diagram ? (

@@ -3,3 +3,5 @@ shamefullyHoist: true
 allowBuilds:
   # only used for Squirrel.Windows installers; we ship NSIS
   electron-winstaller: false
+  # vitest (indexing tests) pulls in esbuild, which installs its platform binary
+  esbuild: true

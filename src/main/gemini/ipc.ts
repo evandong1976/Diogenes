@@ -20,7 +20,10 @@ function toRepo(value: unknown): RepoRef {
   ) {
     throw new Error('Expected a repository and branch.')
   }
-  return { fullName: repo.fullName, branch: repo.branch }
+  if (repo.id !== undefined && (!Number.isSafeInteger(repo.id) || repo.id <= 0)) {
+    throw new Error('Expected a GitHub repository ID.')
+  }
+  return { id: repo.id, fullName: repo.fullName, branch: repo.branch }
 }
 
 function toRect(value: unknown): Electron.Rectangle {

@@ -232,8 +232,8 @@ const component = object({
 })
 const connection = object({ id: string, from: string, to: string, label: string })
 const architectureGraph = object({
-  components: array(component, 0, 16),
-  connections: array(connection, 0, 32)
+  components: array(component, 0, 24),
+  connections: array(connection, 0, 64)
 })
 
 export const architectureSchema = object({

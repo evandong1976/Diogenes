@@ -3,9 +3,11 @@ import type { GithubRepo, GithubUser } from '../../preload'
 import { SignIn } from './SignIn'
 import { RepoPicker } from './RepoPicker'
 import type { Architecture } from '../../shared/gemini'
+import type { IndexStatus } from '../../shared/indexing'
 import { CodeLogicLevel } from './canvas/CodeLogicLevel'
 import { initialLogic, type LogicState } from './canvas/logic'
 import { ArchitectureLevel } from './canvas/ArchitectureLevel'
+import { indexLabel } from './canvas/indexStatus'
 
 const LEVELS = ['Infrastructure', 'Integrations', 'Code logic'] as const
 
@@ -18,16 +20,37 @@ function App(): React.JSX.Element {
   const [logic, setLogic] = useState<LogicState>(initialLogic)
   const [architecture, setArchitecture] = useState<Architecture | null>(null)
 
+  const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null)
+
   const pickRepo = (next: GithubRepo): void => {
     window.api.gemini.useFixture()
     setLogic(initialLogic)
     setArchitecture(null)
+    setIndexStatus(null)
     setRepo(next)
+    // Index in the background; diagrams use it as evidence once it's ready.
+    window.api.indexing.start(next.id).then(setIndexStatus, (e: unknown) =>
+      setIndexStatus({
+        repoId: next.id,
+        fullName: next.fullName,
+        state: 'failed',
+        error: e instanceof Error ? e.message : String(e),
+        lastIndexed: null
+      })
+    )
   }
 
   useEffect(() => {
     window.api.github.getUser().then(setUser, () => setUser(null))
   }, [])
+
+  const repoId = repo?.id
+  useEffect(() => {
+    if (repoId === undefined) return
+    return window.api.indexing.onStatus((status) => {
+      if (status.repoId === repoId) setIndexStatus(status)
+    })
+  }, [repoId])
 
   const signOut = async (): Promise<void> => {
     await window.api.github.logout()
@@ -62,6 +85,7 @@ function App(): React.JSX.Element {
             level={level === 0 ? 'infrastructure' : 'integrations'}
             architecture={architecture}
             onArchitectureChange={setArchitecture}
+            indexStatus={indexStatus}
           />
         )}
       </main>
@@ -70,6 +94,7 @@ function App(): React.JSX.Element {
           L{level + 1} · {LEVELS[level]}
         </span>
         <span>{repo.defaultBranch}</span>
+        <span>{indexLabel(indexStatus)}</span>
       </footer>
     </div>
   )

@@ -5,7 +5,17 @@ import type {
   RepoGraph,
   RepoRef
 } from '../../shared/gemini'
+import type { SoftwareGraph } from '../../shared/indexing'
 import { getFileText, getRepoTree, type TreeFile } from '../github'
+import { readIndexedGraph } from '../indexing/ipc'
+import {
+  buildFromGrouping,
+  catalogInstruction,
+  catalogPrompt,
+  catalogSchema,
+  summarizeIndex,
+  validateGrouping
+} from './catalog.ts'
 import {
   architectureSchema,
   proposalSchema,
@@ -32,8 +42,42 @@ const MAX_LOGIC_CHARS = 60_000
 
 const countMatches = (text: string, pattern: RegExp): number => text.match(pattern)?.length ?? 0
 
-/** Picks the few source files most likely to hold a state machine, by path then by content. */
-async function pickLogicFiles(repo: RepoRef, tree: TreeFile[]): Promise<FixtureSource[]> {
+const STATE_TYPE = /state|status|phase|step|stage|mode|lifecycle/i
+const STATE_FN = /transition|dispatch|reduce|advance|set(state|status)|next(state|step)/i
+
+/** Index evidence per file: declared state-like types and functions that move between states. */
+function indexScores(graph: SoftwareGraph | null): Map<string, number> {
+  const scores = new Map<string, number>()
+  for (const n of graph?.nodes ?? []) {
+    if (!n.path) continue
+    const points =
+      ['enum', 'type', 'interface', 'class'].includes(n.kind) && STATE_TYPE.test(n.name)
+        ? 6
+        : ['function', 'method'].includes(n.kind) && STATE_FN.test(n.name)
+          ? 3
+          : 0
+    if (points) scores.set(n.path, (scores.get(n.path) ?? 0) + points)
+  }
+  return scores
+}
+
+/** The repo's indexed graph, if it has one with any nodes. Never throws. */
+async function indexedGraph(repo: RepoRef): Promise<SoftwareGraph | null> {
+  if (!repo.id) return null
+  const graph = await readIndexedGraph(repo.id).catch(() => null)
+  return graph?.nodes.length ? graph : null
+}
+
+/**
+ * Picks the few source files most likely to hold a state machine: by index evidence when the
+ * repo is indexed, then by path and content keywords.
+ */
+async function pickLogicFiles(
+  repo: RepoRef,
+  tree: TreeFile[],
+  graph: SoftwareGraph | null
+): Promise<FixtureSource[]> {
+  const fromIndex = indexScores(graph)
   const candidates = tree
     .filter(
       (f) =>
@@ -43,7 +87,10 @@ async function pickLogicFiles(repo: RepoRef, tree: TreeFile[]): Promise<FixtureS
         f.size > 0 &&
         f.size <= 40_000
     )
-    .map((f) => ({ ...f, score: countMatches(f.path, STATEFUL_PATH) * 3 }))
+    .map((f) => ({
+      ...f,
+      score: countMatches(f.path, STATEFUL_PATH) * 3 + (fromIndex.get(f.path) ?? 0)
+    }))
     .sort((a, b) => b.score - a.score || a.size - b.size)
     .slice(0, 30)
 
@@ -101,8 +148,11 @@ export function setCurrentFiles(files: FixtureSource[]): void {
 }
 
 export async function buildRepoGraph(repo: RepoRef): Promise<RepoGraph> {
-  const tree = await getRepoTree(repo.fullName, repo.branch)
-  const files = await pickLogicFiles(repo, tree)
+  const [tree, index] = await Promise.all([
+    getRepoTree(repo.fullName, repo.branch),
+    indexedGraph(repo)
+  ])
+  const files = await pickLogicFiles(repo, tree, index)
   const result = await generate(
     'gemini-4-hydrogen',
     repoGraphInstruction,
@@ -145,6 +195,31 @@ Use type "other" when no type fits. Connection labels are short, such as HTTP, S
 deploy. Leave a level empty rather than guess.`
 
 export async function buildArchitecture(repo: RepoRef): Promise<Architecture> {
+  const graph = await indexedGraph(repo)
+  return graph ? architectureFromIndex(graph) : architectureFromFiles(repo)
+}
+
+/** Components group indexed folders and packages; connections are counted from the index. */
+async function architectureFromIndex(graph: SoftwareGraph): Promise<Architecture> {
+  const summary = summarizeIndex(graph)
+  const grouping = validateGrouping(
+    await generate(
+      'gemini-4-hydrogen',
+      catalogInstruction,
+      [{ text: catalogPrompt(summary) }],
+      catalogSchema
+    ),
+    summary
+  )
+  const result = buildFromGrouping(grouping, summary, new Set(graph.files.map((f) => f.path)))
+  return {
+    ...result,
+    evidence: { source: 'index', sha: graph.commit.sha, partial: graph.status === 'partial' }
+  }
+}
+
+/** Fallback when the repo has no index: Gemini reads the file list and manifests. */
+async function architectureFromFiles(repo: RepoRef): Promise<Architecture> {
   const tree = (await getRepoTree(repo.fullName, repo.branch)).filter(
     (f) => !/(^|\/)node_modules\//.test(f.path)
   )
@@ -164,5 +239,8 @@ export async function buildArchitecture(repo: RepoRef): Promise<Architecture> {
     [{ text: JSON.stringify({ files: listed, manifests }) }],
     architectureSchema
   )
-  return validateArchitecture(result, new Set([...listed, ...manifests.map((m) => m.path)]))
+  return {
+    ...validateArchitecture(result, new Set([...listed, ...manifests.map((m) => m.path)])),
+    evidence: { source: 'files' }
+  }
 }

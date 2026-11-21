@@ -9,6 +9,9 @@ const SCOPE = 'repo read:user'
 const tokenPath = (): string => join(app.getPath('userData'), 'github-token')
 
 let token: string | null = null
+// Bumped on every sign-in and sign-out so long-running work can tell the account changed.
+let generation = 0
+const sessionListeners = new Set<() => void>()
 let pending: { deviceCode: string; interval: number; expiresAt: number } | null = null
 
 async function loadToken(): Promise<string | null> {
@@ -21,29 +24,85 @@ async function loadToken(): Promise<string | null> {
   return token
 }
 
+function sessionChanged(): void {
+  generation++
+  for (const l of sessionListeners) l()
+}
+
 async function saveToken(value: string): Promise<void> {
   token = value
   await writeFile(tokenPath(), safeStorage.encryptString(value))
+  sessionChanged()
 }
 
 async function logout(): Promise<void> {
   token = null
   await rm(tokenPath(), { force: true })
+  sessionChanged()
 }
 
-async function githubApi<T>(path: string): Promise<T> {
+/** Identifies the current sign-in. Changes whenever the account signs in or out. */
+export function sessionGeneration(): number {
+  return generation
+}
+
+export function onSessionChange(listener: () => void): () => void {
+  sessionListeners.add(listener)
+  return () => sessionListeners.delete(listener)
+}
+
+/**
+ * Authorized request to the GitHub REST API. The token never leaves the main process.
+ * Returns the raw response so callers can stream bodies (tarballs) or read 404s.
+ */
+export async function githubFetch(
+  path: string,
+  init: { accept?: string; signal?: AbortSignal } = {}
+): Promise<Response> {
+  const current = await loadToken()
+  if (!current) throw new Error('Not signed in to GitHub.')
   const res = await fetch(`https://api.github.com${path}`, {
     headers: {
-      Authorization: `Bearer ${await loadToken()}`,
-      Accept: 'application/vnd.github+json'
-    }
+      Authorization: `Bearer ${current}`,
+      Accept: init.accept ?? 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28'
+    },
+    signal: init.signal
   })
   if (res.status === 401) {
     await logout()
     throw new Error('GitHub session expired. Sign in again.')
   }
+  return res
+}
+
+async function githubApi<T>(path: string): Promise<T> {
+  const res = await githubFetch(path)
   if (!res.ok) throw new Error(`GitHub API ${res.status} on ${path}`)
   return res.json() as Promise<T>
+}
+
+export type AuthorizedRepo = { id: number; fullName: string; defaultBranch: string }
+
+/**
+ * Looks a repository up by numeric ID with the current session's token.
+ * Null when the current account cannot read it (GitHub answers 404 for both cases).
+ */
+export async function getAuthorizedRepo(
+  id: number,
+  signal?: AbortSignal
+): Promise<AuthorizedRepo | null> {
+  const res = await githubFetch(`/repositories/${id}`, { signal })
+  if (res.status === 404 || res.status === 403) return null
+  if (!res.ok) throw new Error(`GitHub API ${res.status} looking up repository ${id}`)
+  const r = (await res.json()) as {
+    id: number
+    full_name: string
+    default_branch: string
+    permissions?: { pull?: boolean }
+  }
+  if (r.id !== id || r.permissions?.pull === false) return null
+  return { id: r.id, fullName: r.full_name, defaultBranch: r.default_branch }
 }
 
 type OAuthResponse = Partial<{

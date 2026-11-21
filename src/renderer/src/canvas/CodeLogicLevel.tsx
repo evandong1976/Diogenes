@@ -49,6 +49,7 @@ export function CodeLogicLevel({ repo, logic, onLogicChange }: Props): React.JSX
   const buildFromRepo = (): Promise<void> =>
     run('Reading repo…', async () => {
       const { graph, files } = await window.api.gemini.buildRepoGraph({
+        id: repo.id,
         fullName: repo.fullName,
         branch: repo.defaultBranch
       })
