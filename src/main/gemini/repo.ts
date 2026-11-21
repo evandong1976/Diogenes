@@ -136,9 +136,42 @@ const numbered = (files: FixtureSource[]): { path: string; lines: string[] }[] =
 
 /** Files behind the graph on the canvas, used to check later edit proposals against. */
 let currentFiles: FixtureSource[] = []
+/** Which repo `currentFiles` came from; null for the bundled fixture. */
+let currentRepo: string | null = null
 
-export function setCurrentFiles(files: FixtureSource[]): void {
+export function setCurrentFiles(files: FixtureSource[], repo: string | null = null): void {
   currentFiles = files
+  currentRepo = repo
+}
+
+const MAX_CHANGE_FILES = 12
+const MAX_CHANGE_CHARS = 150_000
+
+/**
+ * Source files a managed run needs for a graph from `repo`: the files Gemini read when it built
+ * the graph (if they came from this repo), plus every file the graph cites, fetched from GitHub.
+ */
+export async function filesForChange(repo: RepoRef, graph: CurrentGraph): Promise<FixtureSource[]> {
+  const byPath = new Map<string, FixtureSource>()
+  if (currentRepo === repo.fullName) currentFiles.forEach((f) => byPath.set(f.path, f))
+  const cited = [...graph.states, ...graph.transitions].flatMap((x) => x.sources.map((s) => s.path))
+  for (const path of new Set(cited)) {
+    if (byPath.has(path) || byPath.size >= MAX_CHANGE_FILES) continue
+    byPath.set(path, { path, text: await getFileText(repo.fullName, repo.branch, path) })
+  }
+  const files: FixtureSource[] = []
+  let total = 0
+  for (const f of byPath.values()) {
+    if (files.length === MAX_CHANGE_FILES || total + f.text.length > MAX_CHANGE_CHARS) continue
+    files.push(f)
+    total += f.text.length
+  }
+  if (!files.length) {
+    throw new Error(
+      'No source files are linked to this diagram. Build it from the repo before running the agent.'
+    )
+  }
+  return files
 }
 
 export async function buildRepoGraph(repo: RepoRef): Promise<RepoGraph> {
@@ -154,7 +187,7 @@ export async function buildRepoGraph(repo: RepoRef): Promise<RepoGraph> {
     repoResponseSchema(repoGraphSchema)
   )
   const graph = validateRepoGraph(result, files)
-  currentFiles = files
+  setCurrentFiles(files, repo.fullName)
   return { graph, files: files.map((f) => f.path) }
 }
 
