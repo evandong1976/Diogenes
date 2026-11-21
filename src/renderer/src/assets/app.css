@@ -189,36 +189,6 @@ a {
   flex-direction: column;
   gap: var(--dg-space-2);
 }
-/* Canvas nodes use the v0.2 .dg-node card (header + description); sizes come from tokens. */
-.diagram-node {
-  width: 260px;
-}
-.diagram-node .dg-node__desc {
-  display: flex;
-  flex-direction: column;
-  gap: var(--dg-space-2);
-  max-height: none;
-  padding-bottom: var(--dg-space-4);
-  border-bottom: 0;
-}
-.diagram-node-detail {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Let .dg-port's look win over React Flow's default handle; React Flow keeps the positioning. */
-.diagram-node .react-flow__handle.dg-port {
-  width: var(--dg-port-size);
-  height: var(--dg-port-size);
-  min-width: 0;
-  min-height: 0;
-  border: 2px solid var(--dg-port-color, var(--dg-port-data));
-  background: var(--dg-port-color, var(--dg-port-data));
-  box-shadow: 0 0 0 2px var(--dg-bg);
-}
-.diagram-node[data-state='proposed'] .react-flow__handle.dg-port {
-  background: var(--dg-bg);
-}
 .canvas > .canvas-empty {
   height: 100%;
 }
@@ -394,4 +364,294 @@ a {
 }
 .prompt .dg-kbd {
   align-self: center;
+}
+
+/* Dark native scrollbars and form controls. */
+:root {
+  color-scheme: dark;
+}
+
+/* ---------- App frame: sidebar | workspace, status bar below ---------- */
+.app {
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) var(--dg-statusbar-h);
+}
+.app > .statusbar {
+  grid-column: 1 / -1;
+}
+.app > .workspace,
+.app > .repository-catalog {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--dg-surface-1);
+  border-right: 1px solid var(--dg-border);
+}
+.sidebar__section {
+  padding: var(--dg-space-4) 0;
+  border-bottom: 1px solid var(--dg-border);
+}
+.sidebar__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0;
+  padding: var(--dg-space-3) var(--dg-space-5);
+}
+.sidebar__row {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: var(--dg-space-4);
+  padding: 0 var(--dg-space-5);
+  border-left: 2px solid transparent;
+  color: var(--dg-text);
+  font: 500 13px/1 var(--dg-font-ui);
+  cursor: pointer;
+}
+div.sidebar__row {
+  cursor: default;
+}
+.sidebar__row:hover:not(div, :disabled) {
+  background: var(--dg-surface-2);
+}
+.sidebar__row:focus-visible {
+  outline: 1px solid var(--dg-accent);
+  outline-offset: -1px;
+}
+.sidebar__row[aria-current='true'] {
+  border-left-color: var(--dg-accent);
+  background: var(--dg-surface-3);
+}
+.sidebar__row:disabled {
+  color: var(--dg-text-3);
+  cursor: default;
+}
+.sidebar__row--quiet {
+  color: var(--dg-text-2);
+}
+.sidebar__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+strong.sidebar__name {
+  font-weight: 700;
+}
+.sidebar__swatch {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  background: var(--dg-text-3);
+}
+.sidebar__swatch[data-active] {
+  background: var(--dg-accent);
+}
+.sidebar__files {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 0;
+}
+.sidebar__note {
+  padding: 0 var(--dg-space-5);
+}
+.link-x {
+  all: unset;
+  cursor: pointer;
+  font: 400 10px/1 var(--dg-font-bit);
+  color: var(--dg-text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.link-x:hover,
+.link-x:focus-visible {
+  color: var(--dg-text);
+}
+
+/* File tree */
+.tree {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.tree ul {
+  padding: 0;
+}
+.tree__row {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--dg-row-h);
+  display: flex;
+  align-items: center;
+  gap: var(--dg-space-3);
+  padding: 0 var(--dg-space-5) 0 calc(var(--dg-space-5) + var(--depth) * var(--dg-space-5));
+  border-left: 2px solid transparent;
+  font: 400 11px/1 var(--dg-font-bit);
+  color: var(--dg-text-2);
+  cursor: pointer;
+}
+.tree__file {
+  padding-left: calc(var(--dg-space-5) + var(--depth) * var(--dg-space-5) + var(--dg-space-6));
+  color: var(--dg-text);
+}
+.tree__row:hover {
+  background: var(--dg-surface-2);
+}
+.tree__row:focus-visible {
+  outline: 1px solid var(--dg-accent);
+  outline-offset: -1px;
+}
+.tree__row[aria-current='true'] {
+  border-left-color: var(--dg-accent);
+  background: var(--dg-surface-3);
+  color: var(--dg-text);
+}
+.tree__chevron {
+  width: var(--dg-space-5);
+  color: var(--dg-text-3);
+}
+.tree__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree__count {
+  color: var(--dg-accent);
+}
+
+/* ---------- Canvas toolbar + component palette ---------- */
+.canvas-toolbar {
+  position: absolute;
+  z-index: 5;
+  top: var(--dg-space-4);
+  left: var(--dg-space-4);
+  right: var(--dg-space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--dg-space-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: var(--dg-space-2) var(--dg-space-4);
+  background: var(--dg-surface-1);
+  border: 1px solid var(--dg-border);
+  border-radius: var(--dg-radius-control);
+}
+.palette-item {
+  flex: none;
+  height: var(--dg-control-h);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--dg-space-2);
+  padding: 0 var(--dg-space-3);
+  border: 1px solid var(--dg-border-strong);
+  border-radius: var(--dg-radius-control);
+  background: var(--dg-surface-2);
+  font: 600 12px/1 var(--dg-font-ui);
+  cursor: grab;
+  user-select: none;
+}
+.palette-item:hover {
+  background: var(--dg-surface-3);
+}
+.palette-item .dg-node__icon {
+  width: 13px;
+  height: 13px;
+}
+.canvas-toolbar__level {
+  flex: none;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.canvas-toolbar .dg-btn {
+  flex: none;
+}
+.canvas-toolbar__level span {
+  color: var(--dg-accent);
+}
+.canvas-hint {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* ---------- Components (canvas nodes), v0.3 anatomy ---------- */
+.component {
+  width: 260px;
+}
+.component__tile {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  background: var(--dg-surface-3);
+  border: 1px solid var(--dg-border-strong);
+  border-radius: var(--dg-radius-control);
+}
+.component__rows {
+  padding: 0;
+  border-top: 1px solid var(--dg-border);
+}
+.component__rows li {
+  height: var(--dg-row-h);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--dg-space-4);
+  padding: 0 var(--dg-space-5);
+}
+.component__rows li + li {
+  border-top: 1px solid var(--dg-border);
+}
+.component__rows span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dg-text);
+}
+.component[data-dropping] {
+  --dg-node-bc: var(--dg-accent);
+  border-style: dashed;
+}
+/* Input port on the header line, output port on the footer line, like the mock. */
+.component .react-flow__handle.dg-port {
+  min-width: 0;
+  min-height: 0;
+  transform: none;
+}
+.component .react-flow__handle.dg-port--in {
+  top: calc(var(--dg-node-header-h) / 2 - var(--dg-port-size) / 2);
+}
+.component .react-flow__handle.dg-port--out {
+  top: auto;
+  bottom: calc(var(--dg-node-footer-h) / 2 - var(--dg-port-size) / 2);
+}
+.component .react-flow__handle.dg-port:is([data-protocol='event'], [data-protocol='schedule']) {
+  transform: rotate(45deg) scale(0.9);
+}
+/* A file picked in the sidebar: its components stay, the rest fade. */
+.react-flow__node.is-dim {
+  opacity: 0.3;
+}
+.react-flow__node.is-focus .dg-node {
+  --dg-node-bc: var(--dg-accent);
 }

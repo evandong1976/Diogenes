@@ -9,3 +9,4 @@ design
 .agents
 skills-lock.json
 fixtures/refund-retry-approval
+.mcp.json

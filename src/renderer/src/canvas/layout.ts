@@ -3,9 +3,9 @@ export interface Point {
   y: number
 }
 
-// Nodes are 260px wide (design system v0.2) and about 90px tall.
+// Components are 260px wide and up to ~170px tall (header, file rows, footer).
 const COLUMN_GAP = 360
-const ROW_GAP = 130
+const ROW_GAP = 190
 
 const MAX_ROWS = 6
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { GithubRepo, GithubUser } from '../../preload'
 import { SignIn } from './SignIn'
 import { RepoPicker } from './RepoPicker'
@@ -11,8 +11,9 @@ import { initialLogic, type LogicState } from './canvas/logic'
 import { ArchitectureLevel } from './canvas/ArchitectureLevel'
 import { indexLabel } from './canvas/indexStatus'
 import { RepositoryCatalog } from './RepositoryCatalog'
-
-const LEVELS = ['Infrastructure', 'Integrations', 'Code logic'] as const
+import { Sidebar } from './Sidebar'
+import { LEVELS, WorkspaceContext, emptyDraft, type Draft } from './canvas/components'
+import { catalogKindsByLevel } from './canvas/diagrams'
 
 function App(): React.JSX.Element {
   const [user, setUser] = useState<GithubUser | null | undefined>(undefined)
@@ -34,12 +35,18 @@ function App(): React.JSX.Element {
   // The indexed graph; its `catalog` is what the architecture levels draw.
   const [indexed, setIndexed] = useState<SoftwareGraph | null>(null)
 
+  // What the user drew on each level's canvas, and the file picked in the sidebar.
+  const [drafts, setDrafts] = useState<Record<number, Draft>>({})
+  const [focusFile, setFocusFile] = useState<string | null>(null)
+
   const pickRepo = (next: GithubRepo): void => {
     window.api.gemini.useFixture()
     setLogic(initialLogic)
     setArchitecture(null)
     setIndexStatus(null)
     setIndexed(null)
+    setDrafts({})
+    setFocusFile(null)
     setRepo(next)
     // Index in the background; diagrams use it as evidence once it's ready.
     window.api.indexing.start(next.id).then(setIndexStatus, (e: unknown) =>
@@ -123,72 +130,142 @@ function App(): React.JSX.Element {
 
   // Example mode has no repo: only the Code logic level, on the bundled fixture.
   const shownRepo = exampleOpen ? null : repo
+  const catalog = shownRepo ? (indexed?.catalog ?? null) : null
 
   return (
-    <div className="shell">
-      <nav className="titlebar">
-        <button
-          className="dg-btn dg-btn--ghost"
-          onClick={() => {
+    <WorkspaceContext.Provider
+      value={{
+        levelTag: `L${level + 1} · ${LEVELS[level].tag}`,
+        draft: drafts[level] ?? emptyDraft,
+        setDraft: (update) =>
+          setDrafts((all) => ({ ...all, [level]: update(all[level] ?? emptyDraft) })),
+        focusFile
+      }}
+    >
+      <div className="app">
+        <Workspace
+          shownRepo={shownRepo}
+          catalog={catalog}
+          drafts={drafts}
+          level={level}
+          setLevel={setLevel}
+          view={view}
+          setView={setView}
+          indexed={shownRepo ? indexed : null}
+          indexStatus={indexStatus}
+          focusFile={focusFile}
+          setFocusFile={setFocusFile}
+          onPickRepo={pickRepo}
+          onConnectRepo={() => {
             if (exampleOpen) setExampleOpen(false)
             else setRepo(null)
           }}
-        >
-          ← {shownRepo?.fullName ?? 'Back to sign in'}
-        </button>
-        {shownRepo && (
-          <>
-            <div className="segmented" role="group" aria-label="Level">
-              {LEVELS.map((name, i) => (
-                <button key={name} onClick={() => setLevel(i)} aria-pressed={level === i}>
-                  L{i + 1} {name}
-                </button>
-              ))}
-            </div>
-            <div className="segmented" role="group" aria-label="View">
-              <button onClick={() => setView('canvas')} aria-pressed={view === 'canvas'}>
-                Canvas
-              </button>
-              <button onClick={() => setView('catalog')} aria-pressed={view === 'catalog'}>
-                Catalog
-              </button>
-            </div>
-          </>
+        />
+        {shownRepo && view === 'catalog' ? (
+          <RepositoryCatalog key={shownRepo.id} repoId={shownRepo.id} level={level} />
+        ) : (
+          <main className="workspace">
+            {!shownRepo || level === 2 ? (
+              <CodeLogicLevel
+                repo={shownRepo}
+                logic={logic}
+                onLogicChange={setLogic}
+                catalog={catalog}
+                indexStatus={shownRepo ? indexStatus : null}
+              />
+            ) : (
+              <ArchitectureLevel
+                repo={shownRepo}
+                level={level === 0 ? 'infrastructure' : 'integrations'}
+                architecture={architecture}
+                onArchitectureChange={setArchitecture}
+                indexStatus={indexStatus}
+                catalog={catalog}
+                indexed={indexed}
+              />
+            )}
+          </main>
         )}
-      </nav>
-      {shownRepo && view === 'catalog' ? (
-        <RepositoryCatalog key={shownRepo.id} repoId={shownRepo.id} level={level} />
-      ) : (
-        <main className="workspace">
-          {!shownRepo || level === 2 ? (
-            <CodeLogicLevel
-              repo={shownRepo}
-              logic={logic}
-              onLogicChange={setLogic}
-              catalog={shownRepo ? (indexed?.catalog ?? null) : null}
-              indexStatus={shownRepo ? indexStatus : null}
-            />
-          ) : (
-            <ArchitectureLevel
-              repo={shownRepo}
-              level={level === 0 ? 'infrastructure' : 'integrations'}
-              architecture={architecture}
-              onArchitectureChange={setArchitecture}
-              indexStatus={indexStatus}
-              catalog={indexed?.catalog ?? null}
-              indexed={indexed}
-            />
-          )}
-        </main>
-      )}
-      <footer className="statusbar dg-data">
-        <span>
-          L{level + 1} · {LEVELS[level]}
-        </span>
-        <span>{shownRepo?.defaultBranch ?? 'Bundled example'}</span>
-        {shownRepo && <span>{indexLabel(indexStatus)}</span>}
-      </footer>
-    </div>
+        <footer className="statusbar dg-data">
+          <span>
+            L{level + 1} · {LEVELS[level].name}
+          </span>
+          <span>{shownRepo?.defaultBranch ?? 'Bundled example'}</span>
+          {shownRepo && <span>{indexLabel(indexStatus)}</span>}
+        </footer>
+      </div>
+    </WorkspaceContext.Provider>
+  )
+}
+
+/** The sidebar plus the counts it shows, derived from the catalog and the user's drafts. */
+function Workspace({
+  shownRepo,
+  catalog,
+  drafts,
+  level,
+  setLevel,
+  view,
+  setView,
+  indexed,
+  indexStatus,
+  focusFile,
+  setFocusFile,
+  onPickRepo,
+  onConnectRepo
+}: {
+  shownRepo: GithubRepo | null
+  catalog: SoftwareGraph['catalog'] | null
+  drafts: Record<number, Draft>
+  level: number
+  setLevel(level: number): void
+  view: 'canvas' | 'catalog'
+  setView(view: 'canvas' | 'catalog'): void
+  indexed: SoftwareGraph | null
+  indexStatus: IndexStatus | null
+  focusFile: string | null
+  setFocusFile(path: string | null): void
+  onPickRepo(repo: GithubRepo): void
+  onConnectRepo(): void
+}): React.JSX.Element {
+  const levelCounts = useMemo(() => {
+    if (!catalog) return [null, null, null]
+    const count = (kinds: string[]): number =>
+      catalog.nodes.filter((n) => kinds.includes(n.kind)).length
+    return [
+      count(catalogKindsByLevel.infrastructure),
+      count(catalogKindsByLevel.integrations),
+      // Logic also works from the bundled example, so 0 machines isn't "empty".
+      count(['stateMachine']) || null
+    ]
+  }, [catalog])
+
+  const fileCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    const add = (paths: Iterable<string>): void => {
+      for (const p of new Set(paths)) counts.set(p, (counts.get(p) ?? 0) + 1)
+    }
+    for (const n of catalog?.nodes ?? []) add(n.sources.map((s) => s.path))
+    for (const d of Object.values(drafts)) for (const paths of Object.values(d.links)) add(paths)
+    return counts
+  }, [catalog, drafts])
+
+  return (
+    <Sidebar
+      repo={shownRepo}
+      onPickRepo={onPickRepo}
+      onConnectRepo={onConnectRepo}
+      level={level}
+      onLevel={setLevel}
+      levelCounts={levelCounts}
+      view={view}
+      onView={setView}
+      indexed={indexed}
+      indexLabel={indexLabel(indexStatus)}
+      fileCounts={fileCounts}
+      focusFile={focusFile}
+      onFocusFile={setFocusFile}
+    />
   )
 }
 

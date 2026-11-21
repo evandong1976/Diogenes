@@ -37,6 +37,13 @@ export type DiagramNode = {
   /** Draws the node with the design system's error state, for unresolved evidence. */
   unresolved?: boolean
   sources: DiagramSource[]
+  /** Catalog kind, for the component's icon. */
+  catalogKind?: CatalogKind
+  /** TYPE label in the header, such as SERVICE or STORE (design system v0.3). */
+  type?: string
+  /** Output protocol shown in the footer and on the output port. */
+  protocol?: CatalogProtocol
+  resolution?: CatalogNode['resolution']
 }
 
 export interface DiagramEdge {
@@ -225,6 +232,26 @@ const EDGE_PORT: Record<CatalogEdgeKind, PortType> = {
   navigates_to: 'http'
 }
 
+const TYPE_LABELS: Record<CatalogKind, string> = {
+  module: 'MODULE',
+  workload: 'WORKLOAD',
+  operation: 'OP',
+  resource: 'RESOURCE',
+  dataContract: 'SCHEMA',
+  stateMachine: 'STATES',
+  view: 'VIEW',
+  trigger: 'TRIGGER',
+  workflow: 'FLOW',
+  generic: 'NODE'
+}
+
+function typeLabel(node: CatalogNode): string {
+  if (node.kind === 'workload' && node.properties.role) return node.properties.role.toUpperCase()
+  if (node.kind === 'resource' && node.properties.resourceType)
+    return node.properties.resourceType.toUpperCase()
+  return TYPE_LABELS[node.kind]
+}
+
 /** The one-line summary of a node's typed properties. */
 function describe(node: CatalogNode): string | undefined {
   switch (node.kind) {
@@ -281,6 +308,10 @@ export function catalogDiagram(catalog: CatalogGraph, kinds: CatalogKind[]): Dia
     tag: n.resolution === 'declared' ? 'Declared' : undefined,
     change: n.resolution === 'proposed' ? 'added' : 'unchanged',
     unresolved: n.resolution === 'unresolved',
+    catalogKind: n.kind,
+    type: typeLabel(n),
+    protocol: (n.ports.find((p) => p.direction === 'out') ?? n.ports[0])?.protocol,
+    resolution: n.resolution,
     sources: n.sources.map((s) => ({
       path: s.path,
       startLine: s.span ? s.span.start.line + 1 : undefined,
