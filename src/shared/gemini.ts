@@ -102,7 +102,28 @@ export interface CaptureRect {
 
 export interface ManagedAgentResult {
   diff: string
-  tests: { name: string; passed: boolean }[]
+  tests: {
+    name: string
+    passed: boolean
+    /** Acceptance check ID, for checks derived from the diagram. */
+    id?: string
+    /** What the agent's check observed, or why the check counted as failed. */
+    detail?: string
+  }[]
+  /** Source files the agent changed, not counting its checks script. */
+  changedFiles?: string[]
+  /** `fixture`: the bundled retry checks. `diagram`: checks derived from the approved edits. */
+  checks?: 'fixture' | 'diagram'
+}
+
+/** An approved change to hand to the managed agent. */
+export interface ManagedChangeRequest {
+  /** The graph before any of the approved edits. */
+  graph: CurrentGraph
+  /** Approved edits, in the order they were applied. */
+  edits: ProposedEdit[]
+  /** The repo the graph came from. Absent for the bundled example. */
+  repo?: RepoRef
 }
 
 export interface DiogenesApi {
@@ -116,6 +137,11 @@ export interface DiogenesApi {
     buildArchitecture(repo: RepoRef): Promise<Architecture>
     proposeEdit(graph: CurrentGraph, png: Uint8Array): Promise<ProposalResult>
     runManagedRetry(graph: CurrentGraph, proposal: ProposedEdit): Promise<ManagedAgentResult>
+    /**
+     * Any approved change: the agent implements it and is verified against acceptance checks
+     * derived from the edits. The bundled retry-once example keeps its own fixed checks.
+     */
+    runManagedChange(request: ManagedChangeRequest): Promise<ManagedAgentResult>
   }
   canvas: {
     /** Screenshots part of the window, for sending canvas markup to Gemini. */
@@ -130,5 +156,6 @@ export const geminiChannels = {
   buildArchitecture: 'gemini:build-architecture',
   proposeEdit: 'gemini:propose-edit',
   runManagedRetry: 'gemini:run-managed-retry',
+  runManagedChange: 'gemini:run-managed-change',
   capture: 'canvas:capture'
 } as const

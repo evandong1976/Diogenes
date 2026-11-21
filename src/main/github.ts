@@ -248,6 +248,15 @@ export async function getRepoTree(fullName: string, branch: string): Promise<Tre
 }
 
 export async function getFileText(fullName: string, branch: string, path: string): Promise<string> {
+  // `..` segments survive encodeURIComponent and would reach other API endpoints with the token.
+  if (
+    !path ||
+    path.startsWith('/') ||
+    path.includes('\\') ||
+    path.split('/').some((s) => s === '' || s === '.' || s === '..')
+  ) {
+    throw new Error(`Refusing to read an invalid repository path: ${path}`)
+  }
   const res = await githubFetch(
     `/repos/${fullName}/contents/${encodePath(path)}?ref=${encodeURIComponent(branch)}`,
     { accept: 'application/vnd.github.raw+json' }

@@ -1,4 +1,9 @@
-import type { CurrentGraph, ManagedAgentResult, ProposedEdit } from '../../../shared/gemini'
+import type {
+  CurrentGraph,
+  ManagedAgentResult,
+  ProposedEdit,
+  RepoRef
+} from '../../../shared/gemini'
 import type { IndexStatus } from '../../../shared/indexing'
 import example from '../../../../fixtures/background-job/example.json'
 
@@ -11,7 +16,11 @@ export interface LogicState {
   /** Where the graph came from, shown in the toolbar. */
   source: string
   isExample: boolean
-  approved?: { graph: CurrentGraph; edit: ProposedEdit }
+  /**
+   * Edits approved since the graph was loaded, for the managed agent: `graph` is the graph before
+   * the first of them, and `repo` is set when the graph came from a repo rather than the example.
+   */
+  approved?: { graph: CurrentGraph; edits: ProposedEdit[]; repo?: RepoRef }
   managed?:
     | { kind: 'running' }
     | { kind: 'done'; result: ManagedAgentResult }

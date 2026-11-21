@@ -13,6 +13,18 @@ export interface FixtureSource {
   text: string
 }
 
+/**
+ * A plain repo-relative file path: `/`-separated segments of ordinary characters, with no empty,
+ * `.` or `..` segments, no leading `/`, and no backslashes. Paths from Gemini or the renderer
+ * must pass this before they reach the GitHub API (where `..` would reach other endpoints with
+ * the user's token) or become sandbox file targets.
+ */
+export function isSafeRepoPath(path: unknown): path is string {
+  if (typeof path !== 'string' || path.length === 0 || path.length > 400) return false
+  if (!/^[\w@+\-. ()[\]]+(\/[\w@+\-. ()[\]]+)*$/.test(path)) return false
+  return path.split('/').every((segment) => segment !== '.' && segment !== '..')
+}
+
 export type Schema =
   | { type: 'string'; enum?: string[] }
   | { type: 'integer'; minimum: number }

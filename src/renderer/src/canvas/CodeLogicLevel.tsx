@@ -4,6 +4,7 @@ import type { CatalogGraph } from '../../../shared/catalog'
 import type { CurrentGraph, ProposedEdit } from '../../../shared/gemini'
 import type { IndexStatus } from '../../../shared/indexing'
 import { applyEdit } from '../../../shared/graph'
+import { checksFromEdits, isRetryOnceExample } from '../../../shared/checks'
 import { DiagramCanvas } from './DiagramCanvas'
 import { DrawLayer } from './DrawLayer'
 import { catalogStateMachines, stateDiagram, stateGraphFromCatalog } from './diagrams'
@@ -148,21 +149,38 @@ export function CodeLogicLevel({
       }
     })
 
+  // Every approved edit is kept, in order, against the graph as it was before the first one, so
+  // the managed agent implements and verifies the whole change, not just the latest step.
   const approve = (): void => {
     if (!proposal) return
+    const approved = logic.approved
+      ? { ...logic.approved, edits: [...logic.approved.edits, proposal] }
+      : {
+          graph: logic.graph,
+          edits: [proposal],
+          repo:
+            repo && !logic.isExample
+              ? { id: repo.id, fullName: repo.fullName, branch: repo.defaultBranch }
+              : undefined
+        }
     onLogicChange({
       graph: applyEdit(logic.graph, proposal),
       source: logic.source.endsWith('· edited') ? logic.source : `${logic.source} · edited`,
       isExample: logic.isExample,
-      approved:
-        logic.isExample && logic.source === initialLogic.source
-          ? { graph: logic.graph, edit: proposal }
-          : undefined,
+      approved,
       version: logic.version + 1,
       autoBuiltFor: logic.autoBuiltFor
     })
     reset()
   }
+
+  // What the agent will be held to, shown before it runs.
+  const plannedChecks = useMemo(() => {
+    const approved = logic.approved
+    if (!approved) return null
+    if (!approved.repo && isRetryOnceExample(approved.edits)) return 'fixture' as const
+    return checksFromEdits(approved.graph, approved.edits)
+  }, [logic.approved])
 
   const runManaged = async (): Promise<void> => {
     const approved = logic.approved
@@ -170,7 +188,11 @@ export function CodeLogicLevel({
     onLogicChange({ ...logic, managed: { kind: 'running' } })
 
     try {
-      const result = await window.api.gemini.runManagedRetry(approved.graph, approved.edit)
+      const result = await window.api.gemini.runManagedChange({
+        graph: approved.graph,
+        edits: approved.edits,
+        repo: approved.repo
+      })
       onLogicChange((current) =>
         current.approved === approved ? { ...current, managed: { kind: 'done', result } } : current
       )
@@ -272,9 +294,34 @@ export function CodeLogicLevel({
           {busy ?? error ?? `Gemini needs more detail: ${question}`}
         </p>
       )}
+      {plannedChecks && !logic.managed && (
+        <section className="notice" aria-label="Planned acceptance checks">
+          {plannedChecks === 'fixture' ? (
+            <p className="dg-data">
+              Run managed agent: the agent implements the retry and is checked against the
+              example&apos;s 3 retry scenarios.
+            </p>
+          ) : (
+            <>
+              <p className="dg-label">
+                {logic.approved!.edits.length} approved edit
+                {logic.approved!.edits.length === 1 ? '' : 's'} · the agent must pass{' '}
+                {plannedChecks.length} check{plannedChecks.length === 1 ? '' : 's'}
+              </p>
+              <ul className="dg-data">
+                {plannedChecks.map((c) => (
+                  <li key={c.id}>{c.description}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
       {managedPending && (
         <p className="notice dg-data" role="status">
-          Managed agent is editing and testing the example…
+          Managed agent is editing{' '}
+          {logic.approved?.repo ? logic.approved.repo.fullName : 'the example'} and testing it
+          against the checks…
         </p>
       )}
       {logic.managed?.kind === 'error' && (
@@ -289,12 +336,22 @@ export function CodeLogicLevel({
             {managedResult.tests.length} acceptance checks passed
           </p>
           <ul className="dg-data">
-            {managedResult.tests.map(({ name, passed }) => (
-              <li key={name}>
+            {managedResult.tests.map(({ id, name, passed, detail }) => (
+              <li key={id ?? name}>
                 {passed ? 'Pass' : 'Fail'} · {name}
+                {!passed && detail && <span className="muted"> ({detail})</span>}
               </li>
             ))}
           </ul>
+          {managedResult.checks === 'diagram' && managedResult.changedFiles?.length === 0 && (
+            <p className="error">
+              The agent changed no source files, so passing checks don&apos;t show the change was
+              made.
+            </p>
+          )}
+          {!!managedResult.changedFiles?.length && (
+            <p className="dg-data">Changed: {managedResult.changedFiles.join(', ')}</p>
+          )}
           <details>
             <summary>Code diff</summary>
             <pre className="dg-data managed-diff">

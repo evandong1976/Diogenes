@@ -16,6 +16,7 @@ import {
   validateArchitecture,
   validateProposal,
   validateRepoGraph,
+  isSafeRepoPath,
   type FixtureSource
 } from './contracts.ts'
 import { encodePng, generate, proposalInstruction } from './service.ts'
@@ -136,9 +137,60 @@ const numbered = (files: FixtureSource[]): { path: string; lines: string[] }[] =
 
 /** Files behind the graph on the canvas, used to check later edit proposals against. */
 let currentFiles: FixtureSource[] = []
+/** Which repo `currentFiles` came from; null for the bundled fixture. */
+let currentRepo: string | null = null
 
-export function setCurrentFiles(files: FixtureSource[]): void {
+export function setCurrentFiles(files: FixtureSource[], repo: string | null = null): void {
   currentFiles = files
+  currentRepo = repo
+}
+
+const MAX_CHANGE_FILES = 12
+const MAX_CHANGE_CHARS = 150_000
+
+/**
+ * Source files a managed run needs for a graph from `repo`: the files Gemini read when it built
+ * the graph (if they came from this repo), plus every file the graph cites, fetched from GitHub.
+ */
+export async function filesForChange(repo: RepoRef, graph: unknown): Promise<FixtureSource[]> {
+  // Structure only: line ranges are checked against the files once they're gathered.
+  const shape = graph as Partial<CurrentGraph> | null
+  if (!Array.isArray(shape?.states) || !Array.isArray(shape.transitions)) {
+    throw new Error('Expected the approved graph.')
+  }
+  const byPath = new Map<string, FixtureSource>()
+  if (currentRepo === repo.fullName) currentFiles.forEach((f) => byPath.set(f.path, f))
+
+  const cited = new Set<string>()
+  for (const item of [...shape.states, ...shape.transitions]) {
+    for (const source of Array.isArray(item?.sources) ? item.sources : []) {
+      if (!isSafeRepoPath(source?.path)) throw new Error('The graph cites an invalid file path.')
+      cited.add(source.path)
+    }
+  }
+  // Only fetch files that really exist in the repo, so a cited path can't reach anything else.
+  const missing = [...cited].filter((path) => !byPath.has(path))
+  if (missing.length) {
+    const tree = new Set((await getRepoTree(repo.fullName, repo.branch)).map((f) => f.path))
+    for (const path of missing) {
+      if (byPath.size >= MAX_CHANGE_FILES) break
+      if (!tree.has(path)) throw new Error(`The graph cites ${path}, which isn't in the repo.`)
+      byPath.set(path, { path, text: await getFileText(repo.fullName, repo.branch, path) })
+    }
+  }
+  const files: FixtureSource[] = []
+  let total = 0
+  for (const f of byPath.values()) {
+    if (files.length === MAX_CHANGE_FILES || total + f.text.length > MAX_CHANGE_CHARS) continue
+    files.push(f)
+    total += f.text.length
+  }
+  if (!files.length) {
+    throw new Error(
+      'No source files are linked to this diagram. Build it from the repo before running the agent.'
+    )
+  }
+  return files
 }
 
 export async function buildRepoGraph(repo: RepoRef): Promise<RepoGraph> {
@@ -154,7 +206,7 @@ export async function buildRepoGraph(repo: RepoRef): Promise<RepoGraph> {
     repoResponseSchema(repoGraphSchema)
   )
   const graph = validateRepoGraph(result, files)
-  currentFiles = files
+  setCurrentFiles(files, repo.fullName)
   return { graph, files: files.map((f) => f.path) }
 }
 

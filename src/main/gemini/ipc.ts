@@ -2,10 +2,25 @@ import { ipcMain } from 'electron'
 import job from '../../../fixtures/background-job/source/job.ts?raw'
 import worker from '../../../fixtures/background-job/source/worker.ts?raw'
 import verifyRetry from '../../../fixtures/background-job/verify-retry.mjs?raw'
-import { geminiChannels, type CaptureRect, type RepoRef } from '../../shared/gemini'
-import { buildArchitecture, buildRepoGraph, proposeEdit, setCurrentFiles } from './repo'
+import reporter from './verifier/report.mjs?raw'
+import { isRetryOnceExample } from '../../shared/checks'
+import {
+  geminiChannels,
+  type CaptureRect,
+  type CurrentGraph,
+  type ManagedAgentResult,
+  type ProposedEdit,
+  type RepoRef
+} from '../../shared/gemini'
+import {
+  buildArchitecture,
+  buildRepoGraph,
+  filesForChange,
+  proposeEdit,
+  setCurrentFiles
+} from './repo'
 import { createGeminiService } from './service'
-import { runManagedRetry } from './managed-agent'
+import { runManagedChange, runManagedRetry } from './managed-agent'
 
 const fixtureFiles = [
   { path: 'job.ts', text: job },
@@ -39,6 +54,29 @@ function toRect(value: unknown): Electron.Rectangle {
   return { x, y, width, height }
 }
 
+/**
+ * Any approved change. The bundled example's retry-once edit keeps its fixed checks; every other
+ * change is verified against checks derived from its edits. Graph and edits are fully validated
+ * in runManagedChange once the files are known; this only routes the request.
+ */
+async function runChange(value: unknown): Promise<ManagedAgentResult> {
+  const request = value as { graph?: unknown; edits?: unknown; repo?: unknown } | null
+  const graph = request?.graph as CurrentGraph | undefined
+  const edits = request?.edits
+  if (!graph || !Array.isArray(graph.states) || !Array.isArray(graph.transitions)) {
+    throw new Error('Expected the approved graph.')
+  }
+  if (!Array.isArray(edits)) throw new Error('Expected the approved edits.')
+  if (request?.repo === undefined) {
+    if (isRetryOnceExample(edits as ProposedEdit[])) {
+      return runManagedRetry(fixtureFiles, verifyRetry, graph, edits[0])
+    }
+    return runManagedChange(graph, edits, fixtureFiles, reporter)
+  }
+  const repo = toRepo(request.repo)
+  return runManagedChange(graph, edits, await filesForChange(repo, graph), reporter)
+}
+
 export function registerGeminiHandlers(): void {
   const fixture = createGeminiService(fixtureFiles)
   // The canvas starts on the fixture, so proposals are checked against its files until a repo loads.
@@ -62,6 +100,7 @@ export function registerGeminiHandlers(): void {
   ipcMain.handle(geminiChannels.runManagedRetry, (_event, graph: unknown, proposal: unknown) =>
     runManagedRetry(fixtureFiles, verifyRetry, graph, proposal)
   )
+  ipcMain.handle(geminiChannels.runManagedChange, (_event, request: unknown) => runChange(request))
   ipcMain.handle(geminiChannels.capture, async (event, rect: unknown) => {
     const image = await event.sender.capturePage(toRect(rect))
     return new Uint8Array(image.toPNG())
