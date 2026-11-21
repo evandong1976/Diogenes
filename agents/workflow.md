@@ -83,6 +83,8 @@ The packet (`kind: 'catalog'`) lists the connections a candidate must add, remov
 | `catalog-conformance` | Re-indexing the candidate with the same pipeline shows each required connection added or removed, and each preserved one kept | Anything the indexer cannot observe. Node changes and connections to proposed nodes stay `unknown` |
 | `bend-law`            | Present only when a state machine behavior changed; `unknown` (`unsupported`) because no proof binding exists for it          | The behavior                                                                                       |
 
+When the approved proposal has a plan, the backend passes it as `ApprovalRequest.plan` (`planForApproval`: summary, behavior, steps, preserved, acceptance, files, and only the evidence read at the base commit). It is frozen into `packet.plan` and covered by `approvalId`. The coding brief renders it as Intended behavior, Steps, Must stay the same, Code evidence and "Acceptance checks from the plan (not verified by Diogenes)", lists node changes the verifier cannot observe as `unknown`, and gives plain shell guidance for the managed workspace (`ls`, `grep`, `git status`, `git diff`, focused repo checks; no real database or external service). Plan acceptance checks are never obligations.
+
 An expectation the re-indexed base already satisfies is not evidence and is `unknown`. Declaring port contracts or data contract nodes is recorded as `annotations` and asks nothing of the code. Acceptance needs every obligation to pass.
 
 ## Reproducible check

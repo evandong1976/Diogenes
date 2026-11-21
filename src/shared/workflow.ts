@@ -63,6 +63,22 @@ interface ApprovedChangeBase {
   sourceContext?: SourceContext[]
 }
 
+/**
+ * The approved design plan carried into the coding brief. It is guidance, not a verified claim:
+ * `acceptance` is handed to the coding agent and never counted as a local obligation.
+ */
+export interface HandoffPlan {
+  summary: string
+  behavior: string
+  steps: string[]
+  preserved: string[]
+  acceptance: string[]
+  /** Extra files the plan named. Frozen packets list only those accepted into `scope`. */
+  files?: string[]
+  /** Source the design agent read, at the base commit. Lines are 0-based, end-exclusive. */
+  evidence: { path: string; startLine: number; endLine: number; excerpt: string }[]
+}
+
 export interface RetryApprovedChange extends ApprovedChangeBase {
   kind?: undefined
   catalog: { schemaVersion: number; revision: number; bindingPath: string }
@@ -101,6 +117,8 @@ export interface CatalogApprovedChange extends ApprovedChangeBase {
   /** Catalog-only changes, such as declared port contracts. They ask nothing of the code. */
   annotations: string[]
   toolchain: { verifier: string; typescript: string }
+  /** The approved plan, when the proposal carried one. */
+  plan?: HandoffPlan
 }
 
 /** Paths the candidate of `packet` may change. */
@@ -123,6 +141,8 @@ export interface ApprovalRequest {
   baseline: CatalogGraph
   patch: CatalogPatch
   approvedBy: string
+  /** The approved proposal's plan and evidence, frozen into catalog packets. */
+  plan?: HandoffPlan
 }
 
 // ---------------------------------------------------------------- coding gateway (Session 3)

@@ -30,10 +30,18 @@ interface Props {
   hidden?: boolean
   /** Highlights a source file in the sidebar tree and on the canvas. */
   onOpenSource?(path: string): void
+  /** Called once the backend has started the coding handoff for an approval. */
+  onHandoffStarted?(approvalId: string): void
 }
 
 /** Source rows link to the file tree; provided once by the pane. */
 const OpenSource = createContext<((path: string) => void) | null>(null)
+
+/** Pane-level actions the proposal and handoff cards reach. */
+const PaneActions = createContext<{
+  revise(proposal: Proposal): void
+  onHandoffStarted?(approvalId: string): void
+}>({ revise: () => {} })
 
 const time = (iso: string): string =>
   new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
@@ -41,13 +49,20 @@ const time = (iso: string): string =>
 const MODEL_OPTIONS = DESIGN_MODELS.map((m) => ({ value: m, label: m }))
 
 /** The project's design conversation: threads, transcript, context, composer and proposals. */
-export function ChatPane({ chat, selected, hidden, onOpenSource }: Props): React.JSX.Element {
+export function ChatPane({
+  chat,
+  selected,
+  hidden,
+  onOpenSource,
+  onHandoffStarted
+}: Props): React.JSX.Element {
   const { load, draft, project, activeId, pending } = chat
   const [text, setText] = useState('')
   // The component the developer removed from the message; a new canvas selection is attached.
   const [detached, setDetached] = useState<string | null>(null)
   const [modelChoice, setModelChoice] = useState<string | null>(null)
   const logRef = useRef<HTMLOListElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   // Follow new activity only while the reader is at the bottom; remember where they were.
   const pinned = useRef(true)
   const scrolled = useRef(0)
@@ -100,6 +115,13 @@ export function ChatPane({ chat, selected, hidden, onOpenSource }: Props): React
     if (ok) setText('')
   }
 
+  // Revising is another turn: the agent sees the pending plan and proposes a replacement.
+  const revise = (proposal: Proposal): void => {
+    setText((t) => t || `Revise proposal ${proposal.id}: `)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }
+  const actions = useMemo(() => ({ revise, onHandoffStarted }), [onHandoffStarted])
+
   return (
     <OpenSource.Provider value={onOpenSource ?? null}>
       <section
@@ -141,28 +163,32 @@ export function ChatPane({ chat, selected, hidden, onOpenSource }: Props): React
 
         <LoadState chat={chat} />
 
-        <ol className="chat__log" ref={logRef} onScroll={onScroll} aria-live="polite">
-          {items.map((item) =>
-            item.kind === 'note' ? (
-              <li key={item.key} className="chat__note" title={time(item.at)}>
-                {item.text}
+        <PaneActions.Provider value={actions}>
+          <ol className="chat__log" ref={logRef} onScroll={onScroll} aria-live="polite">
+            {items.map((item) =>
+              item.kind === 'note' ? (
+                <li key={item.key} className="chat__note" title={time(item.at)}>
+                  {item.text}
+                </li>
+              ) : pendingHere && item.turn?.status === 'running' ? null : (
+                <Turn key={item.key} item={item} chat={chat} draft={draft} model={model} />
+              )
+            )}
+            {pendingHere && (
+              <li className="chat__turn">
+                <UserMessage
+                  text={pendingHere.text}
+                  context={
+                    pendingHere.selection.status === 'ok' ? pendingHere.selection.name : null
+                  }
+                />
+                <div className="chat__assistant">
+                  <Activity turn={live} live />
+                </div>
               </li>
-            ) : pendingHere && item.turn?.status === 'running' ? null : (
-              <Turn key={item.key} item={item} chat={chat} draft={draft} model={model} />
-            )
-          )}
-          {pendingHere && (
-            <li className="chat__turn">
-              <UserMessage
-                text={pendingHere.text}
-                context={pendingHere.selection.status === 'ok' ? pendingHere.selection.name : null}
-              />
-              <div className="chat__assistant">
-                <Activity turn={live} live />
-              </div>
-            </li>
-          )}
-        </ol>
+            )}
+          </ol>
+        </PaneActions.Provider>
 
         {chat.error && (
           <div className="dg-reject chat__error" role="alert">
@@ -211,6 +237,7 @@ export function ChatPane({ chat, selected, hidden, onOpenSource }: Props): React
               </div>
             )}
             <textarea
+              ref={inputRef}
               id="design-chat"
               className="chat__input"
               aria-label="Message"
@@ -459,7 +486,11 @@ function ProposalCard({
   const behind = proposalIsBehind(proposal, draft)
   const busy = chat.deciding === proposal.id || !!chat.pending
   const outcome = chat.approvals[proposal.id]
-  const status = PROPOSAL_STATUS[proposal.status]
+  const status = proposal.supersededBy
+    ? ({ label: 'Revised', tone: 'info' } as const)
+    : PROPOSAL_STATUS[proposal.status]
+  const { revise } = useContext(PaneActions)
+  const { plan } = proposal
   return (
     <section
       className="chat-proposal"
@@ -478,6 +509,19 @@ function ProposalCard({
         )}
       </header>
       <p>{proposal.summary}</p>
+      {plan && (
+        <div className="chat-proposal__section">
+          <span className="chat-proposal__label">Intended behavior</span>
+          <p>{plan.behavior}</p>
+        </div>
+      )}
+      {(preview.components.length > 0 || preview.connections.length > 0) && (
+        <span className="chat-proposal__label">
+          Affected · {preview.components.length} component
+          {preview.components.length === 1 ? '' : 's'} · {preview.connections.length} connection
+          {preview.connections.length === 1 ? '' : 's'}
+        </span>
+      )}
       {(preview.components.length > 0 || preview.connections.length > 0) && (
         <ul className="chat-proposal__changes">
           {preview.components.map((c) => (
@@ -494,6 +538,12 @@ function ProposalCard({
             </li>
           ))}
         </ul>
+      )}
+      {plan && <PlanDetail plan={plan} />}
+      {!plan && (
+        <p className="chat__muted">
+          No plan recorded with this proposal; ask for one before approving.
+        </p>
       )}
       {proposal.evidence.length > 0 && (
         <details className="chat__activity">
@@ -524,10 +574,19 @@ function ProposalCard({
             type="button"
             className="dg-btn"
             disabled={busy}
-            title="Discard; the draft stays as it is"
+            title="Discard; the draft and the canvas go back to how they were"
             onClick={() => void chat.discard(proposal)}
           >
             Discard
+          </button>
+          <button
+            type="button"
+            className="dg-btn"
+            disabled={busy}
+            title="Describe what to change; the agent proposes a revised plan"
+            onClick={() => revise(proposal)}
+          >
+            Revise
           </button>
           <button
             type="button"
@@ -541,6 +600,55 @@ function ProposalCard({
         </div>
       )}
     </section>
+  )
+}
+
+/** The plan's steps, what stays true and how to check it. Acceptance is guidance, never a pass. */
+function PlanDetail({ plan }: { plan: NonNullable<Proposal['plan']> }): React.JSX.Element {
+  return (
+    <>
+      <div className="chat-proposal__section">
+        <span className="chat-proposal__label">Steps</span>
+        <ol className="chat-proposal__steps">
+          {plan.steps.map((step, i) => (
+            <li key={i}>{step}</li>
+          ))}
+        </ol>
+      </div>
+      {plan.preserved.length > 0 && (
+        <div className="chat-proposal__section">
+          <span className="chat-proposal__label">Stays true</span>
+          <ul className="chat-proposal__steps">
+            {plan.preserved.map((item, i) => (
+              <li key={i}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div className="chat-proposal__section">
+        <span className="chat-proposal__label">
+          Acceptance checks{' '}
+          <span className="chat-proposal__unverified">not verified by Diogenes</span>
+        </span>
+        <ul className="chat-proposal__steps">
+          {plan.acceptance.map((item, i) => (
+            <li key={i}>{item}</li>
+          ))}
+        </ul>
+      </div>
+      {!!plan.files?.length && (
+        <div className="chat-proposal__section">
+          <span className="chat-proposal__label">Extra files in scope</span>
+          <ul className="chat__sources">
+            {plan.files.map((path) => (
+              <li key={path}>
+                <span className="chat__source">{path}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -595,7 +703,11 @@ const CODING_STAGE: Record<HandoffStage, string> = {
   closed: 'Run closed'
 }
 
-const CHECK_LABEL: Record<Outcome, string> = { pass: 'Passed', fail: 'Failed', unknown: 'Unknown' }
+const CHECK_LABEL: Record<Outcome, string> = {
+  pass: 'Passed',
+  fail: 'Failed',
+  unknown: 'Unknown · not proven'
+}
 
 function CodingHandoff({
   approvalId,
@@ -610,17 +722,26 @@ function CodingHandoff({
 }): React.JSX.Element {
   const handoff = chat.handoffs.findLast((h) => h.approvalId === approvalId)
   const busy = chat.codingBusy === approvalId
+  const { onHandoffStarted } = useContext(PaneActions)
   if (!handoff)
     return (
-      <div className="chat__actions">
-        <button
-          type="button"
-          className="dg-btn dg-btn--primary"
-          disabled={!!chat.codingBusy}
-          onClick={() => void chat.startHandoff(approvalId)}
-        >
-          {busy ? 'Starting…' : 'Send to coding agent'}
-        </button>
+      <div className="chat-proposal__ready">
+        <p className="chat__status" data-tone="ok">
+          Approved and frozen · {approvalId.slice(0, 8)}. The coding agent gets this plan, its
+          evidence and the checks; only the local checks can accept the result.
+        </p>
+        <div className="chat__actions">
+          <button
+            type="button"
+            className="dg-btn dg-btn--primary"
+            disabled={!!chat.codingBusy}
+            onClick={() =>
+              void chat.startHandoff(approvalId).then((ok) => ok && onHandoffStarted?.(approvalId))
+            }
+          >
+            {busy ? 'Starting…' : 'Send to coding agent'}
+          </button>
+        </div>
       </div>
     )
 
@@ -659,8 +780,9 @@ function CodingHandoff({
       {verdict && (
         <ul className="chat-proposal__changes" aria-label="Local verification checks">
           {verdict.obligations.map((check) => (
-            <li key={check.id} title={check.diagnostic ?? check.scope}>
+            <li key={check.id} title={check.diagnostic ?? check.scope} data-outcome={check.outcome}>
               {check.id} · {CHECK_LABEL[check.outcome]}
+              {check.unknownReason && ` (${check.unknownReason})`}
             </li>
           ))}
         </ul>

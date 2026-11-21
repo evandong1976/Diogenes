@@ -88,6 +88,12 @@ function scriptedModel(baseline: CatalogGraph): ModelClient {
           name: 'propose_graph_edit',
           args: {
             summary: 'The preload orders call should read archived orders.',
+            plan: {
+              behavior: 'The renderer lists archived orders through the same preload call.',
+              steps: ['Point the preload orders call at the orders:archived channel.'],
+              preserved: ['The preload still exposes orders() to the renderer.'],
+              acceptance: ['Calling orders() returns archived orders.']
+            },
             operations: [
               // The editor connects ports only once both declare a contract.
               {

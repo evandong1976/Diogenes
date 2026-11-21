@@ -19,6 +19,7 @@ import type { ModelClient } from '../design/model'
 import { DesignStore, type DesignStateStore } from '../design/store'
 import type { SourceReader, VerificationSource } from '../design/tools'
 import { ThreadStore, type ThreadRepository } from '../threads/store'
+import { planForApproval } from '../workflow/catalogApproval'
 import { WorkflowService } from '../workflow/service'
 import { WorkflowStore, type WorkflowRepository } from '../workflow/store'
 import type { LocalVerifier } from '../workflow/verifiers'
@@ -312,7 +313,8 @@ export class AgentBackend implements BackendApi {
         },
         baseline: intent.baseGraph,
         patch: proposal.patch,
-        approvedBy: access.account
+        approvedBy: access.account,
+        plan: planForApproval(proposal, intent.baseGraph.commit.sha)
       })
       return { design, approval }
     } catch (error) {

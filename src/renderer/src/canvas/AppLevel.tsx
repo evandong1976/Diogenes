@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { GithubRepo } from '../../../preload'
 import type { AppFlow } from '../../../shared/gemini'
+import type { CatalogGraph } from '../../../shared/catalog'
 import type { IndexStatus } from '../../../shared/indexing'
 import { AppCanvas } from './AppCanvas'
 import { PaneToggle } from './PaneToggle'
 import { EXAMPLE_FLOW, type Box, type FlowDraft } from './flow'
 import { indexRunning } from './indexStatus'
+import { proposalOverlay, type CanvasProposal } from './proposalOverlay'
 
 interface Props {
   /** Null in example mode: the whiteboard word game is shown. */
@@ -17,7 +19,15 @@ interface Props {
   indexStatus: IndexStatus | null
   focusFile: string | null
   onOpenLogic(box: Box): void
+  /** The design draft and its focused proposal, drawn over the map. */
+  design?: {
+    catalog: CatalogGraph | null
+    focus: CanvasProposal | null
+    selectedComponentId: string | null
+  }
 }
+
+const NO_MAP: AppFlow = { boxes: [], links: [] }
 
 /** The one canvas: how the app runs, and what the engineer wants changed. */
 export function AppLevel({
@@ -28,7 +38,8 @@ export function AppLevel({
   setDraft,
   indexStatus,
   focusFile,
-  onOpenLogic
+  onOpenLogic,
+  design
 }: Props): React.JSX.Element {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -64,7 +75,23 @@ export function AppLevel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `infer` only reads these
   }, [repo, flow, waiting])
 
-  const shown = repo ? flow : EXAMPLE_FLOW
+  const focus = repo ? (design?.focus ?? null) : null
+  // A proposal is drawn even before Gemini's map exists: its components then stand alone.
+  const shown = repo ? (flow ?? (focus && focus.status !== 'stale' ? NO_MAP : null)) : EXAMPLE_FLOW
+  const overlay = useMemo(
+    () => (shown && focus && focus.status !== 'stale' ? proposalOverlay(shown, focus) : null),
+    [shown, focus]
+  )
+  const notice =
+    focus?.status === 'stale' ? (
+      <>
+        <span className="flow-pending__code">Not drawn · stale</span>
+        <span>
+          Proposal {focus.proposal.id} was checked against r{focus.proposal.preview.baseRevision};
+          the draft is r{focus.draftRevision}. Ask for it again against the current draft.
+        </span>
+      </>
+    ) : null
   const status = (
     <>
       <span className="dg-label">
@@ -96,6 +123,10 @@ export function AppLevel({
           focusFile={focusFile}
           onOpenLogic={onOpenLogic}
           status={status}
+          catalog={repo ? (design?.catalog ?? null) : null}
+          overlay={overlay}
+          notice={notice}
+          selectedComponentId={design?.selectedComponentId ?? null}
         />
       ) : (
         <div className="dg-canvas--dots canvas-empty level-empty">

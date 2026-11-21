@@ -156,3 +156,54 @@ describe('design chat composer', () => {
     expect(html).toContain('Send <span')
   })
 })
+
+describe('design chat proposal', () => {
+  it('shows the approved plan with unverified acceptance and a clear send to coding', () => {
+    const turn = {
+      ...running,
+      status: 'awaiting-approval' as const,
+      proposalId: 'prop-1',
+      reply: 'Proposed.'
+    }
+    const proposal = {
+      id: 'prop-1',
+      projectId: '42',
+      threadId: 'thr_1',
+      turnId: 't1',
+      summary: 'Serve notes from Supabase.',
+      patch: { repositoryId: 42, commitSha: draft.commitSha, baseRevision: 3, operations: [] },
+      preview: {
+        baseRevision: 3,
+        resultRevision: 4,
+        components: [{ id: 'supabase-notes', name: 'Supabase notes', change: 'added' }],
+        connections: []
+      },
+      evidence: [],
+      plan: {
+        behavior: 'Notes come from the Supabase notes table.',
+        steps: ['Add src/supabase.ts'],
+        preserved: ['api.notes() keeps its type'],
+        acceptance: ['api.notes() returns the same texts'],
+        files: ['package.json']
+      },
+      status: 'approved',
+      createdAt: running.startedAt
+    }
+    const c = {
+      ...chat({ ...project(turn), proposals: [proposal] } as ProjectState, [], false),
+      handoffs: [],
+      codingBusy: null,
+      frozen: [{ approvalId: 'a'.repeat(64), correlation: { proposalId: 'prop-1' } }]
+    } as unknown as DesignChat
+    const html = render(c)
+    for (const text of [
+      'Intended behavior',
+      'Notes come from the Supabase notes table.',
+      'Stays true',
+      'not verified by Diogenes',
+      'package.json',
+      'Send to coding agent'
+    ])
+      expect(html).toContain(text)
+  })
+})

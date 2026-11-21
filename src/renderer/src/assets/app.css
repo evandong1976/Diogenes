@@ -1254,6 +1254,106 @@ button.chat__source:focus-visible {
 .flow-box[data-dim] {
   opacity: 0.3;
 }
+/* A design proposal drawn on the map: marigold adds, poppy removes, steel stands in for indexed
+   components the map has no box for. Never confused with the engineer's own proposed boxes. */
+.flow-box[data-change='added'] {
+  border-style: dashed;
+  border-color: var(--dg-accent);
+  background: var(--dg-proposed-tint);
+}
+.flow-box[data-change='removed'] {
+  border-style: dashed;
+  border-color: var(--dg-danger);
+  background: var(--dg-reject-tint);
+}
+.flow-box[data-change='removed'] .flow-name {
+  text-decoration: line-through;
+  text-decoration-color: var(--dg-danger);
+}
+.flow-box[data-change='updated'] {
+  border-color: var(--dg-accent);
+}
+.flow-box[data-change='indexed'] {
+  border-style: dotted;
+  border-color: var(--dg-info);
+}
+.flow-box[data-change] .flow-summary {
+  font: 400 10px/1.3 var(--dg-font-bit);
+  overflow-wrap: anywhere;
+}
+.flow-tag[data-change='removed'] {
+  color: var(--dg-danger);
+  border-color: var(--dg-danger);
+}
+.flow-tag[data-change='indexed'] {
+  color: var(--dg-info);
+  border-color: var(--dg-info);
+}
+.flow-edge--added .react-flow__edge-text,
+.flow-edge--removed .react-flow__edge-text {
+  font-family: var(--dg-font-bit);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.flow-edge--added .react-flow__edge-text {
+  fill: var(--dg-accent);
+}
+.flow-edge--removed .react-flow__edge-text {
+  fill: var(--dg-danger);
+}
+.flow-pending {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  bottom: var(--dg-space-5);
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--dg-space-2) var(--dg-space-4);
+  max-width: calc(100% - 2 * var(--dg-space-6));
+  padding: var(--dg-space-3) var(--dg-space-5);
+  border: 1px dashed var(--dg-accent);
+  border-radius: var(--dg-radius-control);
+  background: var(--dg-surface-1);
+  color: var(--dg-text);
+  font-size: 12px;
+}
+.flow-pending[data-status='approved'] {
+  border-style: solid;
+  border-color: var(--dg-ok);
+}
+.flow-pending[data-status='stale'] {
+  border-color: var(--dg-warn);
+}
+.flow-pending__code {
+  font: 400 10px/1 var(--dg-font-bit);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dg-accent);
+}
+.flow-pending[data-status='approved'] .flow-pending__code {
+  color: var(--dg-ok);
+}
+.flow-pending__hint {
+  color: var(--dg-text-2);
+}
+.flow-component {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  cursor: pointer;
+}
+.flow-component:hover {
+  background: var(--dg-surface-3);
+}
+.flow-component[aria-pressed='true'] {
+  background: var(--dg-selected);
+  box-shadow: inset 2px 0 0 var(--dg-accent);
+}
 .flow-head {
   display: flex;
   align-items: center;
@@ -1510,6 +1610,49 @@ button.chat__source:focus-visible {
 }
 .chat-proposal__changes [data-change='removed'] .chat-proposal__mark {
   color: var(--dg-danger);
+}
+.chat-proposal__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dg-space-2);
+  min-width: 0;
+}
+.chat-proposal__section p {
+  margin: 0;
+}
+.chat-proposal__label {
+  font: 400 10px/1.2 var(--dg-font-bit);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dg-text-2);
+}
+.chat-proposal__unverified {
+  margin-left: var(--dg-space-3);
+  color: var(--dg-info);
+}
+.chat-proposal__steps {
+  margin: 0;
+  padding-left: 1.4em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dg-space-2);
+  overflow-wrap: anywhere;
+}
+.chat-proposal__ready {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dg-space-4);
+  padding-top: var(--dg-space-4);
+  border-top: 1px solid var(--dg-border);
+}
+.chat-proposal__changes [data-outcome='unknown'] {
+  color: var(--dg-info);
+}
+.chat-proposal__changes [data-outcome='fail'] {
+  color: var(--dg-danger);
+}
+.chat-proposal__changes [data-outcome='pass'] {
+  color: var(--dg-ok);
 }
 .chat__actions {
   display: flex;

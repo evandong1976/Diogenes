@@ -25,6 +25,7 @@ import {
 import { catalogKindsByLevel } from './canvas/diagrams'
 import { ChatPane } from './agent/ChatPane'
 import { useDesignChat } from './agent/useDesignChat'
+import { focusedProposal } from './canvas/proposalOverlay'
 
 function App(): React.JSX.Element {
   const [user, setUser] = useState<GithubUser | null | undefined>(undefined)
@@ -122,6 +123,11 @@ function App(): React.JSX.Element {
   // The design backend is project-scoped to a GitHub repo, so example mode has no chat.
   const chatProject = !exampleOpen && repo ? String(repo.id) : null
   const chat = useDesignChat(chatProject, chatProject ? (publishedSha ?? null) : null)
+  // The open thread's newest proposal, drawn on the app canvas against its exact base revision.
+  const canvasFocus = useMemo(
+    () => focusedProposal(chat.project, chat.draft, chat.activeId),
+    [chat.project, chat.draft, chat.activeId]
+  )
   useEffect(() => {
     if (repoId === undefined || !publishedSha) return
     let active = true
@@ -308,6 +314,11 @@ function App(): React.JSX.Element {
                 indexStatus={indexStatus}
                 focusFile={focusFile}
                 onOpenLogic={() => setLogicOpen(true)}
+                design={{
+                  catalog: chat.draft?.graph ?? catalog,
+                  focus: canvasFocus,
+                  selectedComponentId: selected?.componentId ?? null
+                }}
               />
             )}
           </main>

@@ -67,7 +67,8 @@ export interface DesignChat {
   cancel(): void
   approve(proposal: Proposal): Promise<void>
   discard(proposal: Proposal): Promise<void>
-  startHandoff(approvalId: string): Promise<void>
+  /** True once the backend started (or returned the open) handoff for the approval. */
+  startHandoff(approvalId: string): Promise<boolean>
   cancelHandoff(handoff: HandoffRecord): Promise<void>
   /** The exact candidate that passed local verification, as a patch for the developer's repo. */
   verifiedPatch(handoff: HandoffRecord): Promise<VerifiedPatch>
@@ -264,19 +265,20 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
   const runCodingAction = async (
     approvalId: string,
     action: (project: string) => Promise<HandoffRecord>
-  ): Promise<void> => {
-    if (!projectId || codingAction.current) return
+  ): Promise<boolean> => {
+    if (!projectId || codingAction.current) return false
     codingAction.current = projectId
     setCodingBusy(approvalId)
     setError(null)
     try {
       const result = await action(projectId)
-      if (scope.current.projectId === projectId) {
-        setHandoffs((current) => updateHandoff(current, result))
-        await refresh()
-      }
+      if (scope.current.projectId !== projectId) return false
+      setHandoffs((current) => updateHandoff(current, result))
+      await refresh().catch((e) => setError(message(e)))
+      return true
     } catch (e) {
       if (scope.current.projectId === projectId) setError(message(e))
+      return false
     } finally {
       codingAction.current = null
       setCodingBusy(null)
@@ -396,8 +398,10 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
       }),
     startHandoff: (approvalId) =>
       runCodingAction(approvalId, (p) => api.workflow.startHandoff(p, approvalId)),
-    cancelHandoff: (handoff) =>
-      runCodingAction(handoff.approvalId, (p) => api.workflow.cancel(p, handoff.handoffId)),
+    cancelHandoff: async (handoff) =>
+      void (await runCodingAction(handoff.approvalId, (p) =>
+        api.workflow.cancel(p, handoff.handoffId)
+      )),
     verifiedPatch: (handoff) =>
       api.workflow.verifiedPatch(handoff.correlation.projectId, handoff.handoffId),
     dismissError: () => setError(null)

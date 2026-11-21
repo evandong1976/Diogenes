@@ -54,9 +54,11 @@ The model sees these tools. All run locally against the draft the turn was given
 | `inspect_component`  | A component's kind, ports, cited sources, and direct connections.                                                            |
 | `follow_connections` | Connections and components up to 3 hops in, out, or both.                                                                    |
 | `read_source`        | The cited source excerpt at the draft commit. It is recorded as evidence and returns an `evidenceId`.                        |
-| `propose_graph_edit` | Validates a `CatalogPatch` with `applyCatalogPatch`. It records a pending proposal with a preview, or returns the rejection. |
+| `propose_graph_edit` | Validates a `CatalogPatch` with `applyCatalogPatch` and a required `plan` (`behavior`, `steps`, `acceptance`, optional `preserved` and `files`). It records a pending proposal with a preview, or returns the rejection. A new proposal in a thread supersedes the pending one (`status: 'stale'`, `supersededBy`). |
 | `read_verification`  | The latest `VerificationReport` for an approved intent in the thread.                                                        |
 | `request_correction` | Records a `CorrectionRequest` against a failed verification. The intent is unchanged.                                        |
+
+Evidence read in earlier turns of the same thread at the same commit stays citable, and the latest pending proposal (summary, changes, plan) is in the turn context, so a plan can be worked out and revised over several turns. `plan.acceptance` is guidance for the reviewer and the coding agent; Diogenes never reports it as passed. `plan.files` names repository-relative files beyond the touched components' source (a root manifest, a new module); approval checks each at the base commit (an existing path must be a regular file, a missing one must look like a new file) and adds it to the frozen scope. Directories are refused.
 
 The harness, not the model, sets the patch's repository, commit and base revision. Each turn is capped at 8 model steps and 16 tool calls. Earlier turns replay as plain text, so a thread can switch models. Within a turn, model parts, including thought signatures, are returned verbatim. `pnpm vitest run test/design` exercises the loop with a scripted model and the real graph editor.
 
