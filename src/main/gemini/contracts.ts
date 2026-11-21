@@ -42,6 +42,22 @@ const array = (items: Schema, minItems: number, maxItems: number): Schema => ({
   maxItems
 })
 
+// Nested array bounds can exceed Gemini's decoding limit. Keep the original schema for validation.
+export function repoResponseSchema(schema: Schema): Record<string, unknown> {
+  if (schema.type === 'array') {
+    return { type: 'array', items: repoResponseSchema(schema.items) }
+  }
+  if (schema.type === 'object') {
+    return {
+      ...schema,
+      properties: Object.fromEntries(
+        Object.entries(schema.properties).map(([key, field]) => [key, repoResponseSchema(field)])
+      )
+    }
+  }
+  return schema
+}
+
 const source = object({ path: string, startLine: line, endLine: line })
 const state = { id: string, label: string }
 const transition = { id: string, from: string, to: string, trigger: string }
