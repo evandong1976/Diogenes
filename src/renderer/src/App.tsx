@@ -166,6 +166,7 @@ function App(): React.JSX.Element {
               logic={logic}
               onLogicChange={setLogic}
               catalog={shownRepo ? (indexed?.catalog ?? null) : null}
+              indexStatus={shownRepo ? indexStatus : null}
             />
           ) : (
             <ArchitectureLevel
@@ -175,6 +176,7 @@ function App(): React.JSX.Element {
               onArchitectureChange={setArchitecture}
               indexStatus={indexStatus}
               catalog={indexed?.catalog ?? null}
+              indexed={indexed}
             />
           )}
         </main>
