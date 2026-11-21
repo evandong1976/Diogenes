@@ -484,7 +484,7 @@ function newTurn(index: number, kind: CodingRunTurn['kind']): CodingRunTurn {
 const SUMMARY_NOTE =
   'When you finish, reply with two or three plain sentences for the developer: what you changed in their code, in which files, and anything they should know.'
 
-const SHELL_NOTE = `Work in ${workspaceRoot}. It contains only the approved source files and has no Git metadata. Use simple shell commands such as ls, cat, grep and sed to inspect and edit those files. Run a focused check where possible. The export command builds the patch against the pinned source copies.`
+const SHELL_NOTE = `Work in ${workspaceRoot}. It contains only the approved source files and has no Git metadata. Start with the files named in the plan and inspect their existing implementations. Names of new diagram components describe intended responsibilities and may not exist in the code. Reuse existing behavior when it already satisfies the plan, then edit the relevant files to implement the remaining behavior. Do not repeatedly search for proposed component names. If a planned detail cannot be implemented within the approved files, implement the feasible parts and explain the limitation. Run a focused check where possible, then export the changes using the command below.`
 
 export function turnPrompt(input: StartCodingRun, turn: CodingRunTurn): string {
   const finish = `When you are done, run exactly this command and confirm it printed DIOGENES_CANDIDATE_WRITTEN:\n${exportCommand(turn.exportToken)}`
