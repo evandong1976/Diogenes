@@ -165,4 +165,28 @@ describe('CodingRunGateway', () => {
     expect(await gateway().reopen(run.runId)).toMatchObject({ phase: 'expired' })
     await expect(g.followUp(run.runId, 'Try again.')).rejects.toThrow(/expired/)
   })
+
+  it('rechecks an unconfirmed cancellation when the provider later stops', async () => {
+    const { server, handoff, gateway } = setup([() => {}])
+    server.cancel = () => {
+      throw new Error('Provider refused cancellation')
+    }
+    server.get = (id) => {
+      const item = server.interactions.get(id)!
+      return {
+        id: item.id,
+        environmentId: item.environmentId,
+        status: item.status,
+        steps: item.steps
+      }
+    }
+    const g = gateway()
+    const run = await g.start(startInput(handoff))
+    await g.settle(run.runId)
+    const stopped = await g.cancel(run.runId)
+    expect(stopped.cancellation?.outcome).toBe('unconfirmed')
+    const interaction = server.interactions.get(stopped.turns[0].interactionId!)!
+    interaction.status = 'cancelled'
+    expect((await g.status(run.runId)).cancellation?.outcome).toBe('confirmed')
+  })
 })
