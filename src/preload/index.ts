@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { catalogChannels, type CatalogApi } from '../shared/catalog'
 import { geminiChannels, type DiogenesApi } from '../shared/gemini'
 import { indexingChannels, type IndexStatus, type IndexingApi } from '../shared/indexing'
 
@@ -30,7 +31,12 @@ const indexing: IndexingApi = {
   }
 }
 
+const catalog: CatalogApi = {
+  preview: (patch) => ipcRenderer.invoke(catalogChannels.preview, patch)
+}
+
 const api = {
+  catalog,
   gemini,
   indexing,
   github: {

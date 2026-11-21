@@ -135,3 +135,69 @@ a {
   display: grid;
   place-items: center;
 }
+
+.repository-catalog {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+.catalog-toolbar,
+.catalog-message {
+  padding: var(--dg-space-4) var(--dg-space-6);
+  background: var(--dg-surface-1);
+  border-bottom: 1px solid var(--dg-border);
+}
+.catalog-toolbar > div {
+  display: grid;
+  gap: var(--dg-space-2);
+}
+.catalog-body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  min-height: 0;
+}
+.catalog-list,
+.catalog-detail {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--dg-space-4);
+  padding: var(--dg-space-6);
+  min-width: 0;
+  overflow: auto;
+}
+.catalog-detail {
+  background: var(--dg-surface-1);
+  border-left: 1px solid var(--dg-border);
+  overflow-wrap: anywhere;
+}
+.catalog-detail .row input {
+  flex: 1;
+  min-width: 0;
+}
+.catalog-node {
+  width: 100%;
+  margin-bottom: var(--dg-space-2);
+  padding: var(--dg-space-3) var(--dg-space-4);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--dg-space-4);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.catalog-node .dg-label,
+.catalog-toolbar button,
+.catalog-detail form button {
+  flex-shrink: 0;
+}
+
+.catalog-create {
+  display: grid;
+  gap: var(--dg-space-2);
+}

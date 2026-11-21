@@ -105,7 +105,13 @@ export type CatalogOperation =
   | { type: 'connect'; edge: CatalogEdge }
   | { type: 'disconnect'; edgeId: string }
   | { type: 'rewire'; edge: CatalogEdge }
-  | { type: 'insert'; edgeId: string; node: CatalogNode; incoming: CatalogEdge; outgoing: CatalogEdge }
+  | {
+      type: 'insert'
+      edgeId: string
+      node: CatalogNode
+      incoming: CatalogEdge
+      outgoing: CatalogEdge
+    }
   | { type: 'delete'; nodeId: string }
 
 export interface CatalogPatch {
@@ -132,3 +138,9 @@ export type CatalogPatchResult =
       ok: false
       issue: { code: CatalogIssueCode; message: string; operationIndex?: number; entityId?: string }
     }
+
+export const catalogChannels = { preview: 'catalog:preview' } as const
+
+export interface CatalogApi {
+  preview(patch: CatalogPatch): Promise<CatalogPatchResult>
+}

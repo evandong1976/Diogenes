@@ -1,5 +1,5 @@
 import { createHash } from 'crypto'
-import { mkdir, stat, writeFile } from 'fs/promises'
+import { mkdir, readFile, stat, writeFile } from 'fs/promises'
 import { join } from 'path'
 import {
   GRAPH_SCHEMA_VERSION,
@@ -8,6 +8,7 @@ import {
   type IndexStage,
   type SoftwareGraph
 } from '../../shared/indexing'
+import { deriveCatalog } from '../catalog/discovery'
 import { buildGraph } from './graph'
 import {
   loadTypescript,
@@ -21,7 +22,7 @@ import {
 import { DEFAULT_LIMITS, extractSnapshot, SnapshotError, type SnapshotLimits } from './snapshot'
 
 /** Bumped whenever graph construction changes in a way that invalidates cached graphs. */
-export const NORMALIZER_VERSION = '1'
+export const NORMALIZER_VERSION = '2'
 const SCIP_TIMEOUT_MS = 15 * 60 * 1000
 
 export type JobInput = {
@@ -140,6 +141,21 @@ export async function runIndexJob(
     ts: loadTypescript(),
     kindNames: await scipKindNames(),
     diagnostics
+  })
+
+  const sourcePaths = new Set(
+    snap.files
+      .filter(({ status, reason }) => status !== 'rejected' && reason !== 'too-large')
+      .map(({ path }) => path)
+  )
+  graph.catalog = await deriveCatalog(graph, async (path) => {
+    if (!sourcePaths.has(path)) return null
+    try {
+      return await readFile(join(src, path), 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw error
+    }
   })
 
   onStage('saving')

@@ -1,3 +1,5 @@
+import type { CatalogGraph } from './catalog'
+
 // Types shared by main, preload, and renderer for the repository indexing slice.
 // The graph format is Diogenes' own: SCIP is one source of evidence, not the schema.
 // Future language indexers contribute nodes and edges in this same shape.
@@ -141,6 +143,8 @@ export type SoftwareGraph = {
   edges: GraphEdge[]
   coverage: Coverage
   diagnostics: Diagnostic[]
+  /** Derived during indexing while source files are still available. */
+  catalog?: CatalogGraph
 }
 
 export type IndexStage =

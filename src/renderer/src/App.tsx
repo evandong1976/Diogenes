@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { GithubRepo, GithubUser } from '../../preload'
 import { SignIn } from './SignIn'
 import { RepoPicker } from './RepoPicker'
+import { RepositoryCatalog } from './RepositoryCatalog'
 
 const LEVELS = ['Infrastructure', 'Integrations', 'Code logic'] as const
 
@@ -38,9 +39,7 @@ function App(): React.JSX.Element {
           ))}
         </div>
       </nav>
-      <main className="dg-canvas canvas-empty">
-        <span className="dg-label">Nothing parsed yet</span>
-      </main>
+      <RepositoryCatalog key={repo.id} repoId={repo.id} level={level} />
       <footer className="statusbar dg-data">
         <span>
           L{level + 1} · {LEVELS[level]}
