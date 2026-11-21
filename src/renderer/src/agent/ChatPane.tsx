@@ -489,8 +489,6 @@ function ProposalCard({
     : PROPOSAL_STATUS[proposal.status]
   const { revise } = useContext(PaneActions)
   const { plan } = proposal
-  const componentNames = new Map(draft?.graph.nodes.map((node) => [node.id, node.name]))
-  for (const component of preview.components) componentNames.set(component.id, component.name)
   return (
     <section
       className="chat-proposal"
@@ -539,7 +537,7 @@ function ProposalCard({
           {preview.connections.map((c) => (
             <li key={`e-${c.change}-${c.id}`} title={c.id} data-change={c.change}>
               <span className="chat-proposal__mark">{CHANGE_MARK[c.change]}</span>
-              {componentNames.get(c.from) ?? c.from} → {componentNames.get(c.to) ?? c.to}
+              {c.from} → {c.to}
               <span className="chat__muted"> · {c.kind}</span>
             </li>
           ))}

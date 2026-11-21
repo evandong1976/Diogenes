@@ -118,6 +118,15 @@ function scriptedModel(baseline: CatalogGraph): ModelClient {
                   sources: []
                 }
               },
+              {
+                type: 'connect',
+                edge: {
+                  id: 'contains:orders-app->orders-archived-contract',
+                  kind: 'contains',
+                  from: { nodeId: 'module:npm:.' },
+                  to: { nodeId: CONTRACT }
+                }
+              },
               // As the live model writes them: no sources or resolution, keys in its own order.
               ...[CALLER, ARCHIVED].map((id) => {
                 const { kind, name, properties, ports } = baseline.nodes.find((n) => n.id === id)!
@@ -296,7 +305,8 @@ it.skipIf(process.env.DIOGENES_LIVE_SMOKE !== '1')(
     expect(discussion.turn.status, discussion.turn.error).toBe('completed')
     const { turn } = await app.design.startTurn({
       ...conversation,
-      message: 'That sounds right. Show me the proposed change on the canvas.'
+      message:
+        'One clarification. I mean the existing view that gets its data from the orders helper. Let’s have that helper return archived orders. Keep the regular listing available in the main process, and skip the new screen or toggle. Can you show that version on the canvas?'
     })
     expect(turn.status, turn.error ?? turn.reply ?? 'Design agent returned no proposal').toBe(
       'awaiting-approval'
@@ -404,7 +414,8 @@ describe('catalog change through handoff, correction and local verification', ()
     ])
     expect(packet.preserved.length).toBeGreaterThan(1)
     expect(packet.unobservable).toEqual([])
-    expect(packet.annotations).toHaveLength(3)
+    expect(packet.annotations).toHaveLength(4)
+    expect(packet.annotations).toContain('group data contract Archived orders under orders-app')
     expect(packet.sourceContext!.map((f) => f.path).sort()).toEqual([
       'src/main.ts',
       'src/preload.ts'

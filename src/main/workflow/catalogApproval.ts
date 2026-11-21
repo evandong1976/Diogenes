@@ -46,6 +46,15 @@ export function freezeCatalog(
   const { baseline, patch, correlation } = request
   const base = baseline.commit.sha
   const observed = new Set(baseline.nodes.map((n) => n.id))
+  const createdContracts = new Set(
+    patch.operations.flatMap((op) =>
+      op.type === 'create' && op.node.kind === 'dataContract' && !op.node.ports.length
+        ? [op.node.id]
+        : []
+    )
+  )
+  const groupsContract = (edge: CatalogEdge): boolean =>
+    edge.kind === 'contains' && createdContracts.has(edge.to.nodeId)
   const names = new Map<string, string>()
   for (const n of [...baseline.nodes, ...after.nodes]) names.set(n.id, n.name)
   const name = (id: string): string => names.get(id) ?? id
@@ -59,19 +68,23 @@ export function freezeCatalog(
     const old = beforeEdges.get(e.id)
     return !old || key(tripleOf(old)) !== key(tripleOf(e))
   })
+  const codeAdded = added.filter((e) => !groupsContract(e))
   const removed = baseline.edges.filter((e) => {
     const now = afterEdges.get(e.id)
     return (!now || key(tripleOf(now)) !== key(tripleOf(e))) && !afterKeys.has(key(tripleOf(e)))
   })
 
   const touched = new Set<string>()
-  for (const op of patch.operations) for (const id of nodeIdsOf(op)) touched.add(id)
-  for (const e of [...added, ...removed]) touched.add(e.from.nodeId).add(e.to.nodeId)
+  for (const op of patch.operations) {
+    if ((op.type === 'connect' || op.type === 'rewire') && groupsContract(op.edge)) continue
+    for (const id of nodeIdsOf(op)) touched.add(id)
+  }
+  for (const e of [...codeAdded, ...removed]) touched.add(e.from.nodeId).add(e.to.nodeId)
 
   const describeEdge = (t: Triple): string => `${name(t.from)} ${t.kind} ${name(t.to)}`
   const connections: ConnectionExpectation[] = []
   const unobservable: string[] = []
-  for (const e of added) {
+  for (const e of codeAdded) {
     const t = tripleOf(e)
     // A proposed node has a designer-chosen ID the indexer will not reproduce.
     if (!observed.has(t.from) || !observed.has(t.to) || beforeKeys.has(key(t))) {
@@ -111,13 +124,10 @@ export function freezeCatalog(
       description: `${describeEdge(t)} stays connected`
     })
   }
-  const annotations: string[] = []
+  const annotations = added
+    .filter(groupsContract)
+    .map((edge) => `group data contract ${name(edge.to.nodeId)} under ${name(edge.from.nodeId)}`)
   const baseNodes = new Map(baseline.nodes.map((n) => [n.id, n]))
-  const createdContracts = new Set(
-    patch.operations.flatMap((op) =>
-      op.type === 'create' && op.node.kind === 'dataContract' ? [op.node.id] : []
-    )
-  )
   for (const op of patch.operations) {
     // Declaring a port contract is design metadata the editor requires before connecting;
     // it asks nothing of the code.
@@ -144,7 +154,7 @@ export function freezeCatalog(
 
   const planFiles = request.plan ? planFilesAt(repoDir, base, request.plan.files ?? []) : []
   const scope = withFiles(
-    editableScope(baseline, after, touched, [...added, ...removed]),
+    editableScope(baseline, after, touched, [...codeAdded, ...removed]),
     planFiles
   )
   if (!scope.length)
