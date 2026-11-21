@@ -189,4 +189,22 @@ describe('CodingRunGateway', () => {
     interaction.status = 'cancelled'
     expect((await g.status(run.runId)).cancellation?.outcome).toBe('confirmed')
   })
+
+  it('retrieves an exported candidate when the provider ends the turn as cancelled', async () => {
+    const { server, handoff, gateway } = setup([
+      ({ repo, exportCandidate }) => {
+        writeFileSync(join(repo, 'src/retry.ts'), 'export const maxAttempts = 3\n')
+        exportCandidate()
+      }
+    ])
+    const get = server.get.bind(server)
+    server.get = (id) => ({ ...get(id), status: 'cancelled' })
+    const g = gateway()
+    const run = await g.start(startInput(handoff))
+    await g.settle(run.runId)
+    expect(await g.status(run.runId)).toMatchObject({
+      phase: 'idle',
+      candidate: { status: 'ready' }
+    })
+  })
 })

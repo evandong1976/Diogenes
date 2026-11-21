@@ -370,6 +370,12 @@ export class CodingRunGateway implements CodingRunApi {
       run.phase = 'running'
       return
     }
+    // The provider can report a cancelled turn after it already exported a complete candidate.
+    // Retrieve and validate that artifact; an explicit user cancellation uses cancel() instead.
+    if (interaction.status === 'cancelled') {
+      await this.retrieve(run, turn, interaction)
+      return
+    }
     if (!isFinished(interaction.status)) {
       turn.error = `The provider ended the turn with status ${interaction.status}.`
       turn.completedAt = this.stamp()
