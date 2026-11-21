@@ -38,6 +38,9 @@ type ComponentData = DiagramNode & {
   outProtocol: CatalogProtocol
   /** Files the user linked by dropping them on the component. */
   linked: string[]
+  /** Direct children in the tree, and whether they are folded away. */
+  children: number
+  collapsed: boolean
 }
 type ComponentNode = Node<ComponentData, 'component'>
 
@@ -60,6 +63,8 @@ const isDraft = (id: string): boolean => id.startsWith('draft-')
 
 /** Lets a component accept files dropped from the sidebar. */
 const LinkFileContext = createContext<(nodeId: string, path: string) => void>(() => {})
+/** Folds or unfolds a component's subtree. */
+const FoldContext = createContext<(nodeId: string) => void>(() => {})
 
 function KindIcon({ kind }: { kind: DiagramNode['catalogKind'] }): React.JSX.Element {
   return (
@@ -88,6 +93,7 @@ function BrandIcon({ brand }: { brand: Brand }): React.JSX.Element {
 /** The canvas component card: header, optional file rows, status, evidence footer (v0.3). */
 function ComponentView({ id, data, selected }: NodeProps<ComponentNode>): React.JSX.Element {
   const linkFile = useContext(LinkFileContext)
+  const fold = useContext(FoldContext)
   const [dropping, setDropping] = useState(false)
   const kind = guessKind(data)
   const brand = brandFor(data)
@@ -157,6 +163,21 @@ function ComponentView({ id, data, selected }: NodeProps<ComponentNode>): React.
         </span>
         {data.tag && <span className="dg-node__metric">{data.tag}</span>}
         <span className="dg-node__type">{brand?.title ?? data.type ?? data.kind}</span>
+        {data.children > 0 && (
+          <button
+            className="component__fold nodrag"
+            aria-expanded={!data.collapsed}
+            aria-label={`${data.collapsed ? 'Unfold' : 'Fold'} ${data.children} connected`}
+            title={data.collapsed ? 'Unfold' : 'Fold'}
+            onClick={(e) => {
+              e.stopPropagation()
+              fold(id)
+            }}
+          >
+            {data.collapsed ? '▸' : '▾'}
+            {data.children}
+          </button>
+        )}
       </div>
       {rows.length > 0 && (
         <ul className="component__rows">
@@ -259,14 +280,45 @@ export function DiagramCanvas({
     return { nodes, edges }
   }, [diagram, draft])
 
+  // Tree folding: a folded node hides whatever is reachable only through it.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const tree = useMemo(() => {
+    const kids = new Map<string, Set<string>>()
+    for (const e of merged.edges) {
+      if (e.change === 'removed') continue
+      kids.set(e.from, (kids.get(e.from) ?? new Set()).add(e.to))
+    }
+    const reach = (stopAtFolded: boolean): Set<string> => {
+      const seen = new Set(diagram.roots)
+      const queue = [...diagram.roots]
+      while (queue.length) {
+        const id = queue.shift()!
+        if (stopAtFolded && collapsed.has(id)) continue
+        for (const k of kids.get(id) ?? []) if (!seen.has(k)) seen.add(k) && queue.push(k)
+      }
+      return seen
+    }
+    const open = reach(true)
+    const hidden = new Set([...reach(false)].filter((id) => !open.has(id)))
+    return { kids, hidden }
+  }, [merged, diagram.roots, collapsed])
+  const fold = (id: string): void =>
+    setCollapsed((c) => {
+      const next = new Set(c)
+      if (!next.delete(id)) next.add(id)
+      return next
+    })
+
   const layout = useMemo(() => {
-    const live = diagram.edges.filter((e) => e.change !== 'removed')
+    const live = diagram.edges.filter(
+      (e) => e.change !== 'removed' && !tree.hidden.has(e.from) && !tree.hidden.has(e.to)
+    )
     return layeredLayout(
       diagram.roots,
-      diagram.nodes.map((n) => n.id),
+      diagram.nodes.filter((n) => !tree.hidden.has(n.id)).map((n) => n.id),
       live
     )
-  }, [diagram])
+  }, [diagram, tree.hidden])
 
   const focusIds = useMemo(
     () =>
@@ -278,44 +330,56 @@ export function DiagramCanvas({
     [merged, focusFile]
   )
 
-  const nodes: ComponentNode[] = merged.nodes.map((n) => ({
-    id: n.id,
-    type: 'component',
-    position: moving[n.id] ?? draft.positions[n.id] ?? layout.get(n.id) ?? { x: 0, y: 0 },
-    selected: selectedId?.kind === 'node' && selectedId.id === n.id,
-    deletable: isDraft(n.id),
-    measured: sizes[n.id],
-    className: focusIds ? (focusIds.has(n.id) ? 'is-focus' : 'is-dim') : undefined,
-    data: {
-      ...n,
-      outProtocol: outProtocol(n, merged.edges),
-      linked: draft.links[n.id] ?? []
-    }
-  }))
+  const nodes: ComponentNode[] = merged.nodes
+    .filter((n) => !tree.hidden.has(n.id))
+    .map((n) => ({
+      id: n.id,
+      type: 'component',
+      position: moving[n.id] ?? draft.positions[n.id] ?? layout.get(n.id) ?? { x: 0, y: 0 },
+      selected: selectedId?.kind === 'node' && selectedId.id === n.id,
+      deletable: isDraft(n.id),
+      measured: sizes[n.id],
+      className: focusIds ? (focusIds.has(n.id) ? 'is-focus' : 'is-dim') : undefined,
+      data: {
+        ...n,
+        outProtocol: outProtocol(n, merged.edges),
+        linked: draft.links[n.id] ?? [],
+        children: tree.kids.get(n.id)?.size ?? 0,
+        collapsed: collapsed.has(n.id)
+      }
+    }))
 
-  const edges: Edge[] = merged.edges.map((e) => {
-    const color = edgeColor(e)
-    return {
-      id: e.id,
-      source: e.from,
-      target: e.to,
-      label: e.label ? truncate(e.label) : undefined,
-      selected: selectedId?.kind === 'edge' && selectedId.id === e.id,
-      deletable: isDraft(e.id),
-      // React Flow's default edge is a cubic curve with horizontal tangents, as v0.2 specifies.
-      style: {
-        stroke: color,
-        strokeWidth: 'var(--dg-edge-w)',
-        strokeOpacity: 0.85,
-        strokeDasharray: e.change === 'unchanged' ? undefined : '5 4'
-      },
-      markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
-      labelStyle: { fill: 'var(--dg-text-2)', font: '400 10px var(--dg-font-bit)' },
-      labelBgStyle: { fill: 'var(--dg-surface-2)', stroke: 'var(--dg-border-strong)' },
-      labelBgPadding: [4, 2] as [number, number],
-      labelBgBorderRadius: 2
-    }
-  })
+  const edges: Edge[] = merged.edges
+    .filter((e) => !tree.hidden.has(e.from) && !tree.hidden.has(e.to))
+    .map((e) => {
+      const color = edgeColor(e)
+      return {
+        id: e.id,
+        source: e.from,
+        target: e.to,
+        label: e.label ? truncate(e.label) : undefined,
+        selected: selectedId?.kind === 'edge' && selectedId.id === e.id,
+        deletable: isDraft(e.id),
+        // React Flow's default edge is a cubic curve with horizontal tangents, as v0.2 specifies.
+        style: {
+          stroke: color,
+          strokeWidth: 'var(--dg-edge-w)',
+          strokeOpacity: 0.85,
+          strokeDasharray: e.change === 'unchanged' ? undefined : '5 4'
+        },
+        [e.reversed ? 'markerStart' : 'markerEnd']: {
+          type: MarkerType.ArrowClosed,
+          color,
+          width: 14,
+          height: 14,
+          orient: e.reversed ? 'auto-start-reverse' : undefined
+        },
+        labelStyle: { fill: 'var(--dg-text-2)', font: '400 10px var(--dg-font-bit)' },
+        labelBgStyle: { fill: 'var(--dg-surface-2)', stroke: 'var(--dg-border-strong)' },
+        labelBgPadding: [4, 2] as [number, number],
+        labelBgBorderRadius: 2
+      }
+    })
 
   const remove = (nodeIds: string[], edgeIds: string[]): void => {
     if (!nodeIds.length && !edgeIds.length) return
@@ -457,30 +521,32 @@ export function DiagramCanvas({
         }}
         onDrop={onDrop}
       >
-        <LinkFileContext.Provider value={linkFile}>
-          <ReactFlow
-            key={viewKey}
-            nodes={nodes}
-            edges={edges}
-            nodeTypes={nodeTypes}
-            forceColorMode="dark"
-            fitView
-            // Leaves room for the toolbar and doesn't blow small diagrams up past 100%.
-            fitViewOptions={{ padding: { top: '64px', x: '24px', bottom: '24px' }, maxZoom: 1 }}
-            onInit={setRf}
-            onMove={(_, v) => setZoom(v.zoom)}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onNodeClick={(_, node) => setSelectedId({ kind: 'node', id: node.id })}
-            onEdgeClick={(_, edge) => setSelectedId({ kind: 'edge', id: edge.id })}
-            onPaneClick={() => setSelectedId(null)}
-            deleteKeyCode={['Backspace', 'Delete']}
-            proOptions={{ hideAttribution: true }}
-          >
-            <Controls showInteractive={false} />
-          </ReactFlow>
-        </LinkFileContext.Provider>
+        <FoldContext.Provider value={fold}>
+          <LinkFileContext.Provider value={linkFile}>
+            <ReactFlow
+              key={viewKey}
+              nodes={nodes}
+              edges={edges}
+              nodeTypes={nodeTypes}
+              forceColorMode="dark"
+              fitView
+              // Leaves room for the toolbar and doesn't blow small diagrams up past 100%.
+              fitViewOptions={{ padding: { top: '64px', x: '24px', bottom: '24px' }, maxZoom: 1 }}
+              onInit={setRf}
+              onMove={(_, v) => setZoom(v.zoom)}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onNodeClick={(_, node) => setSelectedId({ kind: 'node', id: node.id })}
+              onEdgeClick={(_, edge) => setSelectedId({ kind: 'edge', id: edge.id })}
+              onPaneClick={() => setSelectedId(null)}
+              deleteKeyCode={['Backspace', 'Delete']}
+              proOptions={{ hideAttribution: true }}
+            >
+              <Controls showInteractive={false} />
+            </ReactFlow>
+          </LinkFileContext.Provider>
+        </FoldContext.Provider>
         <div className="canvas-toolbar" role="toolbar" aria-label="Canvas">
           <PaneToggle side="left" />
           <span className="toolbar-divider" />

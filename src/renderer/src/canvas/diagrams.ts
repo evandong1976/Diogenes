@@ -55,6 +55,8 @@ export interface DiagramEdge {
   detail?: string
   change: Change
   sources: DiagramSource[]
+  /** Drawn right-to-left: the tree is flipped, but the arrow still points the way the code calls. */
+  reversed?: boolean
 }
 
 export interface Diagram {

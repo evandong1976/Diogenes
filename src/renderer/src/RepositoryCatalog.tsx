@@ -10,8 +10,7 @@ import type {
 import type { IndexStatus, SoftwareGraph } from '../../shared/indexing'
 
 const kindsByLevel: CatalogKind[][] = [
-  ['module', 'workload', 'resource'],
-  ['operation', 'view', 'trigger', 'workflow'],
+  ['module', 'workload', 'resource', 'operation', 'view', 'trigger', 'workflow'],
   ['stateMachine', 'dataContract', 'generic']
 ]
 

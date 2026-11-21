@@ -4,12 +4,8 @@ import tokens from '../../../../design/tokens.json'
 import type { DiagramEdge, DiagramNode, PortType } from './diagrams'
 import type { Point } from './layout'
 
-/** The three levels, as named in the sidebar and canvas toolbar. */
-export const LEVELS = [
-  { name: 'Infra', tag: 'INFRA' },
-  { name: 'Integrations', tag: 'INTEGRATIONS' },
-  { name: 'Logic', tag: 'LOGIC' }
-] as const
+/** The levels, as named in the sidebar and canvas toolbar. */
+export const LEVELS = [{ name: 'App', tag: 'APP' }] as const
 
 /** Design system v0.3 kind icons: SVG children for a 24px viewBox, stroke 1.8. */
 const ICONS = Object.fromEntries(

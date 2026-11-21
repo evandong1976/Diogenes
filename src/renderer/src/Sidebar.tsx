@@ -36,7 +36,6 @@ export function Sidebar(props: Props): React.JSX.Element {
               <button
                 className="sidebar__row"
                 aria-current={level === i && view === 'canvas' ? 'true' : undefined}
-                disabled={!repo && i !== 2}
                 onClick={() => {
                   props.onLevel(i)
                   props.onView('canvas')
