@@ -346,7 +346,7 @@ describe('replacing an indexed Firebase-backed component', () => {
         '`src/main.ts:',
         "ipcMain.handle('notes:firebase-list'",
         '## Acceptance checks from the plan (not verified by Diogenes)',
-        '`git status`',
+        'without Git metadata',
         'Do not connect to, migrate or seed any real database',
         'reported `unknown`, never passed'
       ])

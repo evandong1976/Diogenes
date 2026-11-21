@@ -692,16 +692,34 @@ function ApprovalState({
   const record = chat.frozen.find((a) => a.correlation.proposalId === proposal.id)
   if (outcome?.kind === 'draft-only' && !record)
     return (
-      <p className="chat__status" data-tone="warn">
-        Applied to draft r{outcome.revision}. No coding handoff was frozen: {outcome.message}
-      </p>
+      <div>
+        <p className="chat__status" data-tone="warn">
+          Applied to draft r{outcome.revision}. No coding handoff was frozen: {outcome.message}
+        </p>
+        <button
+          className="dg-btn"
+          disabled={chat.deciding === proposal.id}
+          onClick={() => void chat.approve(proposal)}
+        >
+          Retry coding handoff
+        </button>
+      </div>
     )
   const id = record?.approvalId ?? (outcome?.kind === 'frozen' ? outcome.approvalId : null)
   if (id) return <CodingHandoff approvalId={id} chat={chat} />
   return (
-    <p className="chat__status" data-tone="warn">
-      Applied to the draft · no coding handoff recorded
-    </p>
+    <div>
+      <p className="chat__status" data-tone="warn">
+        Applied to the draft · no coding handoff recorded
+      </p>
+      <button
+        className="dg-btn"
+        disabled={chat.deciding === proposal.id}
+        onClick={() => void chat.approve(proposal)}
+      >
+        Retry coding handoff
+      </button>
+    </div>
   )
 }
 

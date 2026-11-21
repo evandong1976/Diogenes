@@ -38,7 +38,7 @@ export function correctionBrief(packet: ApprovedChange, correction: CorrectionRe
 const WORKSPACE = `## Working in the workspace
 Use ordinary shell commands in this workspace:
 - look around: \`ls\`, \`cat\`, \`sed -n '1,80p' <file>\`, \`grep -rn '<name>' <dir>\`
-- see your change: \`git status\`, \`git diff\`
+- the workspace contains scoped source files without Git metadata; use the export command to produce the patch
 - run focused checks the repository already has (for example \`npx tsc --noEmit\` or the test file next to what you changed). Dependencies may not be installed; do not add new tooling to make a check run.
 Do not connect to, migrate or seed any real database or external service. Change code only.`
 

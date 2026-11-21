@@ -155,7 +155,6 @@ function scriptedModel(baseline: CatalogGraph): ModelClient {
         }
       }
     ],
-    [{ text: 'Proposed rewiring orders to orders:archived.' }],
     // The correction turn: read the local verdict, then ask for a bounded fix.
     [{ functionCall: { id: 'verify-1', name: 'read_verification', args: {} } }],
     [
@@ -508,7 +507,7 @@ describe('catalog change through handoff, correction and local verification', ()
     expect(briefs.map((b) => b.submitted)).toEqual(server.requests.map((r) => r.input))
     expect(briefs[0].markdown).toBe(await app.workflow.briefPreview(PROJECT, approval.approvalId))
     expect(briefs[0].submitted).toContain(briefs[0].markdown)
-    expect(briefs[0].submitted).toContain('git status and git diff')
+    expect(briefs[0].submitted).toContain('no Git metadata')
     expect(briefs[1].markdown).toContain('Correction requested')
     // The brief reads as a code change in the repository, and renders as sections and lists.
     const blocks = parseMarkdown(briefs[0].markdown)

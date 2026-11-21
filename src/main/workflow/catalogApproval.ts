@@ -153,10 +153,23 @@ export function freezeCatalog(
   )
 
   const planFiles = request.plan ? planFilesAt(repoDir, base, request.plan.files ?? []) : []
-  const scope = withFiles(
+  let scope = withFiles(
     editableScope(baseline, after, touched, [...codeAdded, ...removed]),
     planFiles
   )
+  if (!scope.length && request.plan?.evidence.length) {
+    const evidenceFiles = planFilesAt(repoDir, base, [
+      ...new Set(request.plan.evidence.map((e) => e.path))
+    ])
+    scope = [
+      ...new Set(
+        evidenceFiles.map((path) => {
+          const directory = posix.dirname(path)
+          return directory === '.' ? path : directory
+        })
+      )
+    ].sort()
+  }
   if (!scope.length)
     throw new ApprovalError('The touched components have no source files to change.')
   const sourceContext = contextFor(repoDir, base, scope)
