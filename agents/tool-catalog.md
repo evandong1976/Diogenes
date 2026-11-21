@@ -33,13 +33,38 @@ Types are in [src/shared/indexing.ts](../src/shared/indexing.ts). The main proce
 
 `window.api.gemini.runManagedRetry(graph, proposal)` runs after the user approves a retry-once edit on the bundled background-job example. The main process sends the validated edit and bundled fixture to Antigravity with Gemini 4 Carbon. It returns the remote acceptance checks and diff through the preload bridge. [Fixture verification](../fixtures/background-job/verify-retry.mjs).
 
+## Design agent harness
+
+`DesignService` ([src/main/design/harness.ts](../src/main/design/harness.ts)) runs design turns in the main process with no Electron dependency, so a headless client or a test can drive it. Types are in [src/shared/design.ts](../src/shared/design.ts). `createDesignService` in [src/main/design/index.ts](../src/main/design/index.ts) wires the indexed catalog, GitHub source at the draft commit, and the standard Gemini API. Nothing is on IPC yet.
+
+| Entry point                                        | Effect                                                                                                                                        |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `openProject(projectId, repositoryId)`             | Creates the working draft from the observed catalog (revision 0) on first open. Returns `ProjectState`.                                       |
+| `getProject(projectId)`                            | Draft, proposals, approved intents, correction requests, and turns. Turns left `running` by a previous process are reported as `interrupted`. |
+| `startTurn(DesignTurnInput)`                       | Runs one turn against the exact `GraphRef`. Returns a `TurnRecord`: `awaiting-approval`, `completed`, `stale-graph`, `cancelled` or `failed`. |
+| `cancelTurn(turnId)`                               | Aborts a running turn. The draft is unchanged.                                                                                                |
+| `approve(projectId, proposalId, expectedRevision)` | Stages a pending proposal when the draft is still at its base revision. Idempotent. Returns the new draft and the frozen `ApprovedIntent`.    |
+| `reject(projectId, proposalId, reason?)`           | Marks a pending proposal rejected.                                                                                                            |
+| `getIntent(projectId, intentId)`                   | The approved intent to hand to a coding run.                                                                                                  |
+
+The model sees these tools. All run locally against the draft the turn was given.
+
+| Tool                 | Effect                                                                                                                       |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `inspect_component`  | A component's kind, ports, cited sources, and direct connections.                                                            |
+| `follow_connections` | Connections and components up to 3 hops in, out, or both.                                                                    |
+| `read_source`        | The cited source excerpt at the draft commit. It is recorded as evidence and returns an `evidenceId`.                        |
+| `propose_graph_edit` | Validates a `CatalogPatch` with `applyCatalogPatch`. It records a pending proposal with a preview, or returns the rejection. |
+| `read_verification`  | The latest `VerificationReport` for an approved intent in the thread.                                                        |
+| `request_correction` | Records a `CorrectionRequest` against a failed verification. The intent is unchanged.                                        |
+
+The harness, not the model, sets the patch's repository, commit and base revision. Each turn is capped at 8 model steps and 16 tool calls. Earlier turns replay as plain text, so a thread can switch models. Within a turn, model parts, including thought signatures, are returned verbatim. `pnpm vitest run test/design` exercises the loop with a scripted model and the real graph editor.
+
 ## Proposed tools
 
 These are ownership targets for teammates. Add a callable name here when its interface exists.
 
-| Tool                | Purpose                                                                | Expected behavior                                               |
-| ------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Inspect component   | Show a selected component, its neighbors, and its code references.     | Reads the current graph.                                        |
-| Apply approved edit | Update the canvas with a reviewed change.                              | Changes the working diagram after the user accepts the preview. |
-| Export agent brief  | Package the approved change, source references, and acceptance checks. | Produces a Markdown handoff for a coding agent.                 |
-| Verify behavior     | Run a specific acceptance check against the implementation.            | Reports the check, observed result, and pass or fail.           |
+| Tool               | Purpose                                                                | Expected behavior                                     |
+| ------------------ | ---------------------------------------------------------------------- | ----------------------------------------------------- |
+| Export agent brief | Package the approved change, source references, and acceptance checks. | Produces a Markdown handoff for a coding agent.       |
+| Verify behavior    | Run a specific acceptance check against the implementation.            | Reports the check, observed result, and pass or fail. |
