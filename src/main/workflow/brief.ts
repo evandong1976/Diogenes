@@ -15,13 +15,13 @@ export function codingBrief(packet: ApprovedChange, correction?: CorrectionReque
   return sections.join('\n\n')
 }
 
-/** A steer: the developer's direction for the same approval, sent as a follow-up turn. */
+/** A steer: the developer's direction for the same change, sent as a follow-up turn. */
 export function steerBrief(packet: ApprovedChange, message: string): string {
   return [
-    `Direction from the developer for the approved change to ${packet.targetComponentId}:`,
+    `Follow-up from the developer about your change to ${packet.repository.fullName}:`,
     message,
     '',
-    `The approval is unchanged. Still required:\n${list(packet.requiredChanges)}`,
+    `The goal is the same. The code must still:\n${list(packet.requiredChanges.map(task))}`,
     `Edit only: ${editableScope(packet).join(', ')}`
   ].join('\n')
 }
@@ -31,20 +31,33 @@ export function correctionBrief(packet: ApprovedChange, correction: CorrectionRe
   return steerBrief(packet, correctionSection(correction))
 }
 
+/**
+ * The approved design as an ordinary task in the repository's own code. The packet's graph
+ * wording ("A calls B is connected") is turned into what the code must do; Diogenes' catalog,
+ * patch and IDs stay out of it, so the agent edits the application, not the design tool.
+ */
 function catalogSections(packet: CatalogApprovedChange): string[] {
+  const scope = packet.scope.map((p) => `\`${p}\``).join(', ')
   return [
-    `# Implement approved change around ${packet.targetComponentId}`,
-    `Repository ${packet.repository.fullName} at base commit ${packet.baseCommit}. Edit only: ${packet.scope.map((p) => `\`${p}\``).join(', ')}.`,
-    `## Required changes\n${list(packet.requiredChanges)}`,
-    `## Must stay the same\n${list(packet.preserved)}`,
-    `## Your choice\n${list(packet.openChoices)}`,
-    `## Checked locally after you finish\nYour run completing does not accept the change. These checks do, on the exact files you export: the repository is type checked and re-indexed, and each connection below is looked up in the re-indexed code.\n${list(
+    `# Change ${packet.repository.fullName}: ${task(packet.requiredChanges[0] ?? packet.targetComponentId)}`,
+    `Make this change in the repository's source code, starting from commit ${packet.baseCommit}. Work only in ${scope}. This is a normal code change in the application: edit its files so the behavior below is true. Do not create or edit design files, catalogs or graph data.`,
+    `## What the code must do\n${list(packet.requiredChanges.map(task))}`,
+    `## Keep working\n${list(packet.preserved.map(keep))}`,
+    `## Up to you\n${list(packet.openChoices)}`,
+    `## How your change is checked\nYour turn finishing does not accept the change. When you are done, the repository is type checked and your code is read again to confirm each point above. Accepted only if all of these pass:\n${list(
       packet.obligations.map((o) => `\`${o.id}\`: ${o.scope}`)
-    )}`,
-    `## Connections\n${list(packet.connections.map((c) => `${c.expect === 'present' ? 'must exist' : 'must not exist'}: ${c.kind} ${c.from} -> ${c.to}`))}`,
-    `## Approved catalog patch\n\`\`\`json\n${JSON.stringify(packet.patch.operations, null, 2)}\n\`\`\``
+    )}`
   ]
 }
+
+/** "A calls B is connected" → "A calls B"; "… is no longer connected" → "A no longer calls B". */
+function task(line: string): string {
+  const gone = /^(.+?) (\S+) (.+) is no longer connected$/.exec(line)
+  if (gone) return `${gone[1]} no longer ${gone[2]} ${gone[3]}`
+  return line.replace(/ is connected$/, '')
+}
+
+const keep = (line: string): string => line.replace(/ stays connected$/, ' (keep this)')
 
 function retrySections(packet: RetryApprovedChange): string[] {
   const { bindings: b } = packet
@@ -70,8 +83,8 @@ function retrySections(packet: RetryApprovedChange): string[] {
 
 function correctionSection(correction: CorrectionRequest): string {
   return [
-    `## Correction requested for candidate ${correction.previousCandidateId}`,
-    `The approval is unchanged. Fix only what failed: ${correction.obligationIds.join(', ')}.`,
+    `## Correction requested: fix your previous change`,
+    `Your last change (${correction.previousCandidateId.slice(0, 12)}) did not pass these checks: ${correction.obligationIds.join(', ')}. Keep what works and fix only this.`,
     correction.instructions,
     ...correction.mismatches.map(
       (m) =>

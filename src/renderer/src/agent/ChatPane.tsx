@@ -19,6 +19,7 @@ import {
   type SelectionCheck,
   type TurnItem
 } from './chat'
+import { Markdown } from './Markdown'
 import { Picker } from './Picker'
 import type { ApprovalOutcome, DesignChat } from './useDesignChat'
 
@@ -377,7 +378,11 @@ function Turn({
       />
       <div className="chat__assistant">
         {turn && <Activity turn={turn} />}
-        {reply && <p className="chat__reply">{reply}</p>}
+        {reply && (
+          <div className="chat__reply">
+            <Markdown source={reply} plain />
+          </div>
+        )}
         {turn?.error && (
           <p className="chat__status" data-tone="danger">
             {turn.error}

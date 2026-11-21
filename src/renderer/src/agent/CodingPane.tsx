@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type {
-  ApprovedChange,
   CandidateDiff,
   HandoffRecord,
   RunRecord,
@@ -8,16 +7,21 @@ import type {
 } from '../../../shared/workflow'
 import { DESIGN_MODELS } from './chat'
 import {
+  ORIGIN_LABEL,
   OUTCOME_LABEL,
   OUTCOME_TONE,
+  attemptEvents,
+  canFollowUp,
   codingEntries,
   codingSteps,
   failureEvidence,
   localLine,
   providerLine,
+  replySummary,
   selectEntry,
   traceRows
 } from './coding'
+import { Markdown } from './Markdown'
 import { Picker } from './Picker'
 import type { DesignChat } from './useDesignChat'
 
@@ -26,16 +30,16 @@ interface Props {
   /** The approval to show; null shows the most recently active one. */
   focus: string | null
   onFocus(approvalId: string): void
-  /** Hidden panes stay mounted, so the selection, view and scroll survive a tab swap. */
+  /** Hidden panes stay mounted, so the selection, draft and scroll survive a tab swap. */
   hidden?: boolean
 }
 
-type View = 'handoff' | 'trace' | 'diff'
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
 /**
- * The Coding tab: one approved change's handoff, its live run, what the provider reported, what
- * local verification found, the candidate diff, and the way out (correction, branch, patch).
+ * The Coding tab, as a conversation with the coding agent: each attempt's brief is the message
+ * it received (the exact Markdown), and the agent's shell activity, what it said, and what the
+ * local checks found are its reply. Follow-ups continue in the same workspace.
  */
 export function CodingPane({ chat, focus, onFocus, hidden }: Props): React.JSX.Element {
   const api = window.api.backend.workflow
@@ -46,101 +50,92 @@ export function CodingPane({ chat, focus, onFocus, hidden }: Props): React.JSX.E
   )
   const entry = selectEntry(entries, focus)
   const handoff = entry?.handoff ?? null
-  const approval = chat.frozen.find((a) => a.approvalId === entry?.approvalId) ?? null
-  const latest = handoff?.runs.at(-1)
-  const [view, setView] = useState<View>('trace')
-  const [picked, setPicked] = useState<number | null>(null)
-  const run = handoff?.runs.find((r) => r.attempt === picked) ?? latest
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const approvalId = entry?.approvalId ?? null
+  const [text, setText] = useState('')
+  const logRef = useRef<HTMLOListElement>(null)
+  const pinned = useRef(true)
   const scrolled = useRef(0)
-
-  // A different handoff opens on its newest attempt.
-  const [shown, setShown] = useState(handoff?.handoffId)
-  if (shown !== handoff?.handoffId) {
-    setShown(handoff?.handoffId)
-    setPicked(null)
-  }
-
-  useLayoutEffect(() => {
-    if (!hidden && scrollRef.current) scrollRef.current.scrollTop = scrolled.current
-  }, [hidden])
 
   // Briefs are read back from what each attempt submitted; before a start, from the packet.
   const [briefs, setBriefs] = useState<{ key: string; list: SubmittedBrief[] } | null>(null)
   const [preview, setPreview] = useState<{ key: string; text: string } | null>(null)
   const briefKey = handoff ? `${handoff.handoffId}:${handoff.runs.length}` : null
+  const handoffId = handoff?.handoffId
   useEffect(() => {
-    if (!projectId || !handoff || !briefKey) return
+    if (!projectId || !handoffId || !briefKey) return
     let live = true
-    api.briefs(projectId, handoff.handoffId).then(
+    api.briefs(projectId, handoffId).then(
       (list) => live && setBriefs({ key: briefKey, list }),
       () => {}
     )
     return () => {
       live = false
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on attempts, not every poll
-  }, [api, projectId, briefKey])
-  const approvalId = approval?.approvalId
+  }, [api, projectId, handoffId, briefKey])
   useEffect(() => {
-    if (!projectId || !approvalId || handoff) return
+    if (!projectId || !approvalId || handoffId) return
     let live = true
     api.briefPreview(projectId, approvalId).then(
-      (text) => live && setPreview({ key: approvalId, text }),
+      (t) => live && setPreview({ key: approvalId, text: t }),
       () => {}
     )
     return () => {
       live = false
     }
-  }, [api, projectId, approvalId, handoff])
+  }, [api, projectId, approvalId, handoffId])
 
-  const candidateId = run?.candidate?.candidateId
-  const [diff, setDiff] = useState<CandidateDiff | { candidateId: string; error: string } | null>(
-    null
-  )
+  // Reopening the tab puts the transcript back where it was; new activity follows the bottom.
+  useLayoutEffect(() => {
+    const log = logRef.current
+    if (hidden || !log) return
+    log.scrollTop = pinned.current ? log.scrollHeight : scrolled.current
+  }, [hidden])
+  const activity = handoff?.runs.at(-1)?.run.events.length ?? 0
   useEffect(() => {
-    if (!projectId || !handoff || !run || !candidateId) return
-    let live = true
-    api.candidateDiff(projectId, handoff.handoffId, run.attempt).then(
-      (d) => live && setDiff(d),
-      (e) => live && setDiff({ candidateId, error: message(e) })
-    )
-    return () => {
-      live = false
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one fetch per candidate
-  }, [api, projectId, candidateId])
+    const log = logRef.current
+    if (hidden || !log || !pinned.current) return
+    log.scrollTop = log.scrollHeight
+  }, [hidden, approvalId, activity, handoff?.runs.length, handoff?.stage, briefs])
+  useEffect(() => {
+    pinned.current = true
+  }, [approvalId])
+  const onScroll = (): void => {
+    const log = logRef.current
+    if (hidden || !log) return
+    scrolled.current = log.scrollTop
+    pinned.current = log.scrollHeight - log.scrollTop - log.clientHeight < 32
+  }
 
-  if (!entry || !approval)
+  const panel = {
+    className: 'chat coding',
+    id: 'panel-coding',
+    role: 'tabpanel',
+    'aria-labelledby': 'tab-coding',
+    hidden
+  } as const
+  if (!entry)
     return (
-      <section
-        className="coding"
-        id="panel-coding"
-        role="tabpanel"
-        aria-labelledby="tab-coding"
-        hidden={hidden}
-      >
-        <p className="coding__empty">
+      <section {...panel}>
+        <p className="chat__state">
           Approve a proposed change in Chat, then send it to the coding agent. Its run opens here.
         </p>
       </section>
     )
 
-  const brief =
-    briefs?.key === briefKey ? briefs.list.find((b) => b.attempt === run?.attempt) : undefined
-  const provider = providerLine(run)
-  const local = localLine(run)
-  const steps = codingSteps(handoff)
-  const evidence = handoff && run === latest ? failureEvidence(handoff, run) : []
+  const running = handoff?.stage === 'coding' || handoff?.stage === 'verifying'
+  const followUp = canFollowUp(handoff)
+  const busy = !!chat.codingBusy
+  const canSend = followUp && !busy && !!text.trim()
+  const send = async (): Promise<void> => {
+    if (!canSend || !handoff) return
+    pinned.current = true
+    if (await chat.steerHandoff(handoff, text)) setText('')
+  }
+  const briefFor = (r: RunRecord): SubmittedBrief | undefined =>
+    briefs?.key === briefKey ? briefs.list.find((b) => b.attempt === r.attempt) : undefined
 
   return (
-    <section
-      className="coding"
-      id="panel-coding"
-      role="tabpanel"
-      aria-labelledby="tab-coding"
-      hidden={hidden}
-    >
+    <section {...panel}>
       <div className="chat__threads">
         <Picker
           className="chat__thread-picker"
@@ -154,199 +149,407 @@ export function CodingPane({ chat, focus, onFocus, hidden }: Props): React.JSX.E
           onChange={onFocus}
         />
       </div>
+      <ol className="coding__steps" aria-label="Progress">
+        {codingSteps(handoff).map((s) => (
+          <li
+            key={s.key}
+            data-state={s.state}
+            aria-current={s.state === 'current' ? 'step' : undefined}
+          >
+            {s.label}
+          </li>
+        ))}
+      </ol>
 
-      <div
-        className="coding__body"
-        ref={scrollRef}
-        onScroll={(e) => (scrolled.current = e.currentTarget.scrollTop)}
-      >
-        <ol className="coding__steps" aria-label="Progress">
-          {steps.map((s) => (
-            <li
-              key={s.key}
-              data-state={s.state}
-              aria-current={s.state === 'current' ? 'step' : undefined}
-            >
-              {s.label}
-            </li>
-          ))}
-        </ol>
-
-        {handoff && (
-          <dl className="coding__facts">
-            <dt className="dg-label">Provider</dt>
-            <dd data-tone={provider.tone}>{provider.text}</dd>
-            <dt className="dg-label">Local verification</dt>
-            <dd data-tone={local.tone}>{local.text}</dd>
-            <dt className="dg-label">Attempt</dt>
-            <dd>
-              {handoff.runs.length > 1 ? (
-                <span className="coding__attempts">
-                  {handoff.runs.map((r) => (
-                    <button
-                      key={r.attempt}
-                      type="button"
-                      className="dg-btn dg-btn--ghost"
-                      aria-pressed={r === run}
-                      title={r.origin ?? 'start'}
-                      onClick={() => setPicked(r.attempt)}
-                    >
-                      {r.attempt}
-                    </button>
-                  ))}
-                </span>
-              ) : (
-                (run?.attempt ?? 1)
-              )}{' '}
-              <span className="chat__muted">
-                of {handoff.maxAttempts} · {run?.origin ?? 'start'}
-                {candidateId && ` · ${candidateId.slice(0, 8)}`}
-              </span>
-            </dd>
-          </dl>
-        )}
-
-        {run?.verdict && (
-          <ul className="coding__checks" aria-label="Local verification checks">
-            {run.verdict.obligations.map((o) => (
-              <li key={o.id} title={o.diagnostic ?? o.scope}>
-                <span data-tone={OUTCOME_TONE[o.outcome]}>{OUTCOME_LABEL[o.outcome]}</span>
-                <span className="coding__mono">{o.id}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {evidence.length > 0 && handoff?.stage !== 'accepted' && (
-          <div className="dg-reject" role="alert">
-            <div className="dg-reject__body">
-              <span className="dg-reject__code">Evidence</span>
-              {evidence.map((line, i) => (
-                <span key={i} className="dg-reject__msg">
-                  {line}
-                </span>
-              ))}
+      <ol className="chat__log" ref={logRef} onScroll={onScroll} aria-live="polite">
+        {!handoff ? (
+          <li className="chat__turn">
+            <BriefMessage
+              label="Handoff · not sent yet"
+              markdown={preview?.key === entry.approvalId ? preview.text : null}
+            />
+            <div className="chat__actions">
+              <button
+                type="button"
+                className="dg-btn dg-btn--primary"
+                disabled={busy}
+                onClick={() =>
+                  void chat
+                    .startHandoff(entry.approvalId)
+                    .then((ok) => ok && onFocus(entry.approvalId))
+                }
+              >
+                {chat.codingBusy === entry.approvalId ? 'Starting…' : 'Send to coding agent'}
+              </button>
             </div>
-          </div>
-        )}
-
-        {chat.error && (
-          <p className="chat__status" data-tone="danger" role="alert">
-            {chat.error}
-          </p>
-        )}
-
-        <Actions chat={chat} handoff={handoff} approvalId={entry.approvalId} onFocus={onFocus} />
-
-        <div className="coding__views" role="tablist" aria-label="Run detail">
-          {(['handoff', 'trace', 'diff'] as const).map((v) => (
-            <button
-              key={v}
-              role="tab"
-              type="button"
-              className="leftpane__tab dg-label"
-              aria-selected={view === v}
-              onClick={() => setView(v)}
-            >
-              {v === 'handoff' ? 'Handoff' : v === 'trace' ? 'Trace' : 'Diff'}
-            </button>
-          ))}
-        </div>
-
-        {view === 'handoff' && (
-          <HandoffView
-            packet={approval.packet}
-            brief={brief}
-            preview={!handoff && preview?.key === approval.approvalId ? preview.text : null}
-          />
-        )}
-        {view === 'trace' && <TraceView run={run} live={handoff?.stage === 'coding'} />}
-        {view === 'diff' &&
-          (!candidateId ? (
-            <p className="chat__muted">No candidate yet.</p>
-          ) : diff && diff.candidateId === candidateId ? (
-            'error' in diff ? (
-              <p className="chat__status" data-tone="danger">
-                {diff.error}
-              </p>
-            ) : (
-              <DiffView diff={diff} verified={run?.verdict?.overall === 'pass'} />
+          </li>
+        ) : (
+          handoff.runs.map((r) => {
+            const brief = briefFor(r)
+            return (
+              <li key={r.attempt} className="chat__turn">
+                <BriefMessage
+                  label={`${ORIGIN_LABEL[r.origin ?? 'start']} · attempt ${r.attempt}`}
+                  markdown={brief?.markdown ?? null}
+                  brief={brief}
+                />
+                <AgentReply
+                  chat={chat}
+                  handoff={handoff}
+                  run={r}
+                  latest={r === handoff.runs.at(-1)}
+                  projectId={projectId}
+                />
+              </li>
             )
-          ) : (
-            <p className="chat__muted">Loading the candidate…</p>
-          ))}
-      </div>
+          })
+        )}
+      </ol>
+
+      {chat.error && (
+        <div className="dg-reject chat__error" role="alert">
+          <div className="dg-reject__body">
+            <span className="dg-reject__msg">{chat.error}</span>
+          </div>
+          <button type="button" className="link-x" onClick={chat.dismissError}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      <form
+        className="chat__composer"
+        aria-label="Message the coding agent"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void send()
+        }}
+      >
+        <div className="chat__field" data-disabled={followUp ? undefined : ''}>
+          <textarea
+            className="chat__input"
+            aria-label="Follow-up for the coding agent"
+            rows={2}
+            placeholder={
+              followUp
+                ? 'Follow up with the coding agent…'
+                : running
+                  ? 'The coding agent is working…'
+                  : handoff
+                    ? 'This run is closed'
+                    : 'Send the handoff first'
+            }
+            value={text}
+            disabled={!followUp}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault()
+                void send()
+              }
+            }}
+          />
+          <div className="chat__bar">
+            <span className="chat__muted coding__hint">Same workspace, checked again locally</span>
+            {handoff?.stage === 'coding' ? (
+              <button
+                type="button"
+                className="dg-btn dg-btn--danger chat__send"
+                onClick={() => void chat.cancelHandoff(handoff)}
+                disabled={busy}
+                title="Stop the coding agent's turn"
+              >
+                <span className="chat__stop" aria-hidden="true" />
+                Stop
+              </button>
+            ) : (
+              <button
+                type="submit"
+                className="dg-btn dg-btn--primary chat__send"
+                disabled={!canSend}
+                title="Send (⌘↵)"
+              >
+                Send <span className="dg-kbd">⌘↵</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </form>
     </section>
   )
 }
 
-function Actions({
+/** What the coding agent received, as a message: rendered Markdown, the source a click away. */
+function BriefMessage({
+  label,
+  markdown,
+  brief
+}: {
+  label: string
+  markdown: string | null
+  brief?: SubmittedBrief
+}): React.JSX.Element {
+  const [source, setSource] = useState(false)
+  return (
+    <div className="chat__user coding__brief">
+      <div className="coding__head">
+        <span className="chat__user-context coding__label">{label}</span>
+        {markdown && (
+          <span className="coding__tools">
+            <button
+              type="button"
+              className="dg-btn dg-btn--ghost"
+              aria-pressed={source}
+              onClick={() => setSource((s) => !s)}
+            >
+              {source ? 'Rendered' : 'Markdown'}
+            </button>
+            <Copy text={markdown} label="Copy" />
+          </span>
+        )}
+      </div>
+      {!markdown ? (
+        <p className="chat__muted">Loading the brief…</p>
+      ) : source ? (
+        <pre className="coding__pre">{markdown}</pre>
+      ) : (
+        <Markdown source={markdown} plain />
+      )}
+      {brief && (
+        <details className="chat__activity">
+          <summary>
+            <span className="chat__activity-head">
+              Exact provider input · sha256 {brief.sha256.slice(0, 12)}
+              {brief.sources.length > 0 && ` · ${brief.sources.length} staged files`}
+            </span>
+          </summary>
+          <div className="chat__activity-body">
+            <div className="coding__head">
+              <span />
+              <Copy text={brief.submitted} label="Copy input" />
+            </div>
+            <pre className="coding__pre">{brief.submitted}</pre>
+          </div>
+        </details>
+      )}
+    </div>
+  )
+}
+
+/** The agent's turn: shell activity inline, what it said, then the local checks' findings. */
+function AgentReply({
   chat,
   handoff,
-  approvalId,
-  onFocus
+  run,
+  latest,
+  projectId
 }: {
   chat: DesignChat
-  handoff: HandoffRecord | null
-  approvalId: string
-  onFocus(approvalId: string): void
-}): React.JSX.Element | null {
-  const busy = !!chat.codingBusy
-  if (!handoff)
-    return (
-      <div className="chat__actions">
-        <button
-          type="button"
-          className="dg-btn dg-btn--primary"
-          disabled={busy}
-          onClick={() => void chat.startHandoff(approvalId).then((ok) => ok && onFocus(approvalId))}
-        >
-          {chat.codingBusy === approvalId ? 'Starting…' : 'Send to coding agent'}
-        </button>
-      </div>
-    )
-  if (handoff.stage === 'coding')
-    return (
-      <div className="chat__actions">
-        <button
-          type="button"
-          className="dg-btn"
-          disabled={busy}
-          onClick={() => void chat.cancelHandoff(handoff)}
-        >
-          {chat.codingBusy === approvalId ? 'Stopping…' : 'Stop coding'}
-        </button>
-      </div>
-    )
-  if (handoff.stage === 'correctable') {
-    const { threadId, proposalId } = handoff.correlation
-    const intent = chat.project?.intents.find((i) => i.proposalId === proposalId)
-    const model =
-      chat.project?.turns.findLast((t) => t.threadId === threadId)?.model ?? DESIGN_MODELS[0]
-    if (!intent) return null
-    return (
-      <div className="chat__actions">
-        <button
-          type="button"
-          className="dg-btn"
-          disabled={!!chat.pending || busy}
-          title="Same handoff: the design agent reads this verdict and asks for a bounded fix"
-          onClick={() =>
-            void chat.send(
-              `Read the local verification for approved intent ${intent.id} and request a correction for its failing checks, preserving the approved design.`,
-              model,
-              { status: 'none' },
-              threadId
+  handoff: HandoffRecord
+  run: RunRecord
+  latest: boolean
+  projectId: string | null
+}): React.JSX.Element {
+  const rows = traceRows(attemptEvents(handoff, run))
+  const working = latest && handoff.stage === 'coding'
+  const summary = replySummary(handoff, run)
+  const evidence = latest && handoff.stage !== 'accepted' ? failureEvidence(handoff, run) : []
+  return (
+    <div className="chat__assistant">
+      {rows.length > 0 && (
+        <ol className="coding__trace">
+          {rows.map((row) =>
+            row.kind === 'command' ? (
+              <li key={row.key} className="coding__cmd">
+                <span aria-hidden="true">$ </span>
+                {row.text}
+              </li>
+            ) : row.kind === 'output' ? (
+              <li key={row.key}>
+                {row.long ? (
+                  <details>
+                    <summary className="chat__muted">
+                      {row.text.split('\n').length} lines of output
+                    </summary>
+                    <pre className="coding__pre">{row.text}</pre>
+                  </details>
+                ) : (
+                  <pre className="coding__pre">{row.text}</pre>
+                )}
+              </li>
+            ) : row.kind === 'message' ? (
+              <li key={row.key}>
+                <Markdown source={row.text} plain />
+              </li>
+            ) : (
+              <li key={row.key} data-kind={row.kind}>
+                {row.text}
+              </li>
             )
+          )}
+        </ol>
+      )}
+      {working && (
+        <p className="chat__status" data-tone="info" role="status">
+          <span className="chat__pulse" aria-hidden="true" />{' '}
+          {rows.length ? 'Working in your code…' : 'Starting in your code…'}
+        </p>
+      )}
+      {summary && <p className="chat__reply">{summary.text}</p>}
+      {!working && run.run.status !== 'queued' && (
+        <p className="chat__muted coding__provenance">
+          Agent: {providerLine(run).text} · Local checks: {localLine(run).text}
+        </p>
+      )}
+      {run.verdict && (
+        <ul className="coding__checks" aria-label="Local verification checks">
+          {run.verdict.obligations.map((o) => (
+            <li key={o.id} title={o.diagnostic ?? o.scope}>
+              <span data-tone={OUTCOME_TONE[o.outcome]}>{OUTCOME_LABEL[o.outcome]}</span>
+              <span className="coding__mono">{o.id}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {evidence.length > 0 && (
+        <div className="dg-reject" role="alert">
+          <div className="dg-reject__body">
+            <span className="dg-reject__code">Evidence</span>
+            {evidence.map((line, i) => (
+              <span key={i} className="dg-reject__msg">
+                {line}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {run.candidate && projectId && <Changes projectId={projectId} handoff={handoff} run={run} />}
+      {latest && <LatestActions chat={chat} handoff={handoff} />}
+    </div>
+  )
+}
+
+/** Changed files, with the candidate diff loaded when opened. */
+function Changes({
+  projectId,
+  handoff,
+  run
+}: {
+  projectId: string
+  handoff: HandoffRecord
+  run: RunRecord
+}): React.JSX.Element {
+  const candidate = run.candidate!
+  const [diff, setDiff] = useState<CandidateDiff | string | null>(null)
+  const files = [...candidate.files, ...candidate.deleted.map((d) => `${d} (deleted)`)]
+  const verified =
+    run.verdict?.overall === 'pass' && run.verdict.candidateId === candidate.candidateId
+  return (
+    <details
+      className="chat__activity"
+      onToggle={(e) => {
+        if (!e.currentTarget.open || diff) return
+        window.api.backend.workflow
+          .candidateDiff(projectId, handoff.handoffId, run.attempt)
+          .then(setDiff, (err) => setDiff(message(err)))
+      }}
+    >
+      <summary>
+        <span className="chat__activity-head">
+          Changed {files.length} file{files.length === 1 ? '' : 's'} ·{' '}
+          {verified ? 'verified locally' : 'not verified'}
+        </span>
+      </summary>
+      <div className="chat__activity-body">
+        <ul className="chat__sources">
+          {files.map((f) => (
+            <li key={f}>
+              <span className="chat__source">{f}</span>
+            </li>
+          ))}
+        </ul>
+        {typeof diff === 'string' ? (
+          <p className="chat__status" data-tone="danger">
+            {diff}
+          </p>
+        ) : diff ? (
+          <>
+            <div className="coding__head">
+              <span className="chat__muted">
+                {diff.candidateId.slice(0, 8)} on {diff.baseCommit.slice(0, 7)}
+              </span>
+              <Copy text={diff.diff} label="Copy diff" />
+            </div>
+            <Diff text={diff.diff} />
+          </>
+        ) : (
+          <p className="chat__muted">Loading the diff…</p>
+        )}
+      </div>
+    </details>
+  )
+}
+
+function Diff({ text }: { text: string }): React.JSX.Element {
+  return (
+    <pre className="coding__pre coding__diff">
+      {text.split('\n').map((line, i) => (
+        <span
+          key={i}
+          data-line={
+            line.startsWith('+++') || line.startsWith('---')
+              ? 'file'
+              : line.startsWith('+')
+                ? 'add'
+                : line.startsWith('-')
+                  ? 'del'
+                  : line.startsWith('@@')
+                    ? 'hunk'
+                    : undefined
           }
         >
-          {chat.pending ? 'Design agent working…' : 'Ask design agent to correct'}
-        </button>
-      </div>
-    )
-  }
+          {line}
+          {'\n'}
+        </span>
+      ))}
+    </pre>
+  )
+}
+
+function LatestActions({
+  chat,
+  handoff
+}: {
+  chat: DesignChat
+  handoff: HandoffRecord
+}): React.JSX.Element | null {
   if (handoff.stage === 'accepted') return <Deliver chat={chat} handoff={handoff} />
-  return null
+  if (handoff.stage !== 'correctable') return null
+  const { threadId, proposalId } = handoff.correlation
+  const intent = chat.project?.intents.find((i) => i.proposalId === proposalId)
+  const model =
+    chat.project?.turns.findLast((t) => t.threadId === threadId)?.model ?? DESIGN_MODELS[0]
+  if (!intent) return null
+  return (
+    <div className="chat__actions">
+      <button
+        type="button"
+        className="dg-btn"
+        disabled={!!chat.pending || !!chat.codingBusy}
+        title="Same handoff: the design agent reads this verdict and asks for a bounded fix"
+        onClick={() =>
+          void chat.send(
+            `Read the local verification for approved intent ${intent.id} and request a correction for its failing checks, preserving the approved design.`,
+            model,
+            { status: 'none' },
+            threadId
+          )
+        }
+      >
+        {chat.pending ? 'Design agent working…' : 'Ask design agent to correct'}
+      </button>
+    </div>
+  )
 }
 
 /** The verified commit: pushed to a review branch, or saved as a patch to commit by hand. */
@@ -358,10 +561,10 @@ function Deliver({
   handoff: HandoffRecord
 }): React.JSX.Element {
   const [note, setNote] = useState<{ text: string; tone: 'ok' | 'danger' } | null>(null)
-  const { published } = handoff
   const verifiedId = handoff.runs.findLast((r) => r.verdict?.overall === 'pass')?.candidate
     ?.candidateId
-  const current = published && published.candidateId === verifiedId ? published : null
+  const current =
+    handoff.published && handoff.published.candidateId === verifiedId ? handoff.published : null
   const save = async (): Promise<void> => {
     try {
       const v = await chat.verifiedPatch(handoff)
@@ -392,8 +595,8 @@ function Deliver({
         </p>
       ) : (
         <p className="chat__muted">
-          Publishing pushes this verified commit to a new diogenes/verified-… branch of the
-          repository. The default branch is not touched.
+          Publishing pushes this verified commit to a new diogenes/verified-… branch. The default
+          branch is not touched.
         </p>
       )}
       <div className="chat__actions">
@@ -435,181 +638,5 @@ function Copy({ text, label }: { text: string; label: string }): React.JSX.Eleme
     >
       {done ? 'Copied' : label}
     </button>
-  )
-}
-
-/** Constraints and checks from the frozen packet, then the exact Markdown the agent got. */
-function HandoffView({
-  packet,
-  brief,
-  preview
-}: {
-  packet: ApprovedChange
-  brief: SubmittedBrief | undefined
-  preview: string | null
-}): React.JSX.Element {
-  const scope = packet.kind === 'catalog' ? packet.scope : [packet.bindings.root]
-  const markdown = brief?.markdown ?? preview
-  return (
-    <div className="coding__section">
-      <Group title="Required" items={packet.requiredChanges} />
-      <Group title="Must stay the same" items={packet.preserved} />
-      <Group title="Edit only" items={scope} mono />
-      <Group
-        title="Accepted only if"
-        items={packet.obligations.map((o) => `${o.id}: ${o.scope}`)}
-      />
-      <div className="coding__head">
-        <span className="dg-label">
-          {brief
-            ? `Brief sent · attempt ${brief.attempt} · ${brief.origin}`
-            : preview
-              ? 'Brief to send'
-              : 'Brief'}
-        </span>
-        {markdown && <Copy text={markdown} label="Copy Markdown" />}
-      </div>
-      {markdown ? (
-        <pre className="coding__pre">{markdown}</pre>
-      ) : (
-        <p className="chat__muted">Loading the brief…</p>
-      )}
-      {brief && (
-        <details className="chat__activity">
-          <summary>
-            <span className="chat__activity-head">
-              Exact provider input · sha256 {brief.sha256.slice(0, 12)}
-              {brief.sources.length > 0 && ` · ${brief.sources.length} staged files`}
-            </span>
-          </summary>
-          <div className="coding__head">
-            <span />
-            <Copy text={brief.submitted} label="Copy input" />
-          </div>
-          <pre className="coding__pre">{brief.submitted}</pre>
-        </details>
-      )}
-    </div>
-  )
-}
-
-function Group({
-  title,
-  items,
-  mono
-}: {
-  title: string
-  items: string[]
-  mono?: boolean
-}): React.JSX.Element | null {
-  if (!items.length) return null
-  return (
-    <div className="coding__group">
-      <span className="dg-label">{title}</span>
-      <ul className={mono ? 'coding__mono' : undefined}>
-        {items.map((item, i) => (
-          <li key={i}>{item}</li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-function TraceView({
-  run,
-  live
-}: {
-  run: RunRecord | undefined
-  live: boolean
-}): React.JSX.Element {
-  const rows = traceRows(run?.run.events ?? [])
-  return (
-    <div className="coding__section">
-      {live && (
-        <p className="chat__status" data-tone="info" role="status">
-          <span className="chat__pulse" aria-hidden="true" /> Coding agent working
-        </p>
-      )}
-      {rows.length === 0 ? (
-        <p className="chat__muted">
-          {live ? 'No activity reported yet.' : 'No activity recorded.'}
-        </p>
-      ) : (
-        <ol className="coding__trace" aria-live="polite">
-          {rows.map((row) =>
-            row.kind === 'command' ? (
-              <li key={row.key} className="coding__cmd">
-                <span aria-hidden="true">$ </span>
-                {row.text}
-              </li>
-            ) : row.kind === 'output' ? (
-              <li key={row.key}>
-                {row.long ? (
-                  <details>
-                    <summary className="chat__muted">
-                      {row.text.split('\n').length} lines of output
-                    </summary>
-                    <pre className="coding__pre">{row.text}</pre>
-                  </details>
-                ) : (
-                  <pre className="coding__pre">{row.text}</pre>
-                )}
-              </li>
-            ) : (
-              <li key={row.key} data-kind={row.kind}>
-                {row.kind === 'steer' && <span className="dg-label">Direction </span>}
-                {row.text}
-              </li>
-            )
-          )}
-        </ol>
-      )}
-    </div>
-  )
-}
-
-function DiffView({
-  diff,
-  verified
-}: {
-  diff: CandidateDiff
-  verified: boolean
-}): React.JSX.Element {
-  return (
-    <div className="coding__section">
-      <div className="coding__head">
-        <span className="dg-label">
-          Candidate {diff.candidateId.slice(0, 8)} on {diff.baseCommit.slice(0, 7)} ·{' '}
-          {verified ? 'verified locally' : 'not verified'}
-        </span>
-        <Copy text={diff.diff} label="Copy diff" />
-      </div>
-      <Group
-        title="Changed files"
-        items={[...diff.files, ...diff.deleted.map((d) => `${d} (deleted)`)]}
-        mono
-      />
-      <pre className="coding__pre coding__diff">
-        {diff.diff.split('\n').map((line, i) => (
-          <span
-            key={i}
-            data-line={
-              line.startsWith('+++') || line.startsWith('---')
-                ? 'file'
-                : line.startsWith('+')
-                  ? 'add'
-                  : line.startsWith('-')
-                    ? 'del'
-                    : line.startsWith('@@')
-                      ? 'hunk'
-                      : undefined
-            }
-          >
-            {line}
-            {'\n'}
-          </span>
-        ))}
-      </pre>
-    </div>
   )
 }

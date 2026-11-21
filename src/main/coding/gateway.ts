@@ -471,6 +471,9 @@ function newTurn(index: number, kind: CodingRunTurn['kind']): CodingRunTurn {
  * (including its stored export token), so the submitted bytes can be shown again after a restart.
  */
 /** Plain shell in the managed workspace, one command at a time, so the trace stays readable. */
+const SUMMARY_NOTE =
+  'When you finish, reply with two or three plain sentences for the developer: what you changed in their code, in which files, and anything they should know.'
+
 const SHELL_NOTE = `Work with ordinary shell commands in ${workspaceRoot}, one simple command at a time: ls, cat, grep and sed to read and edit files, git status and git diff to review your change, and a focused check on the files you touched.`
 
 export function turnPrompt(input: StartCodingRun, turn: CodingRunTurn): string {
@@ -480,7 +483,7 @@ export function turnPrompt(input: StartCodingRun, turn: CodingRunTurn): string {
     const list = (items: string[]): string =>
       items.length ? items.map((i) => `- ${i}`).join('\n') : '- (none)'
     return [
-      `Implement an approved design change in ${workspaceRoot}.`,
+      `Make the code change described below in the repository at ${workspaceRoot}.`,
       `It holds the in-scope files of ${handoff.repository.fullName} at commit ${handoff.baseCommit}. Other files are not supplied.`,
       '',
       'Requested behavior:',
@@ -499,16 +502,18 @@ export function turnPrompt(input: StartCodingRun, turn: CodingRunTurn): string {
         : []),
       '',
       SHELL_NOTE,
+      SUMMARY_NOTE,
       'Do not modify /workspace/.diogenes.',
       finish
     ].join('\n')
   }
   return [
-    'Direction from the developer for the same change:',
+    'A follow-up about the same code change:',
     turn.message ?? '',
     '',
     'Keep the guarantees and path limits from the original task.',
     SHELL_NOTE,
+    SUMMARY_NOTE,
     finish
   ].join('\n')
 }
