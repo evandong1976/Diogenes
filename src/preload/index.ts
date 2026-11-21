@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { geminiChannels, type DiogenesApi } from '../shared/gemini'
+import { indexingChannels, type IndexStatus, type IndexingApi } from '../shared/indexing'
 
 export type GithubUser = { login: string; name: string | null }
 export type DeviceCode = { userCode: string; verificationUri: string }
@@ -17,8 +18,21 @@ const gemini: DiogenesApi['gemini'] = {
   proposeEdit: (graph, png) => ipcRenderer.invoke(geminiChannels.proposeEdit, graph, png)
 }
 
+const indexing: IndexingApi = {
+  start: (repoId) => ipcRenderer.invoke(indexingChannels.start, repoId),
+  retry: (repoId) => ipcRenderer.invoke(indexingChannels.retry, repoId),
+  getStatus: (repoId) => ipcRenderer.invoke(indexingChannels.getStatus, repoId),
+  getGraph: (repoId) => ipcRenderer.invoke(indexingChannels.getGraph, repoId),
+  onStatus: (listener) => {
+    const handler = (_e: Electron.IpcRendererEvent, status: IndexStatus): void => listener(status)
+    ipcRenderer.on(indexingChannels.status, handler)
+    return () => ipcRenderer.removeListener(indexingChannels.status, handler)
+  }
+}
+
 const api = {
   gemini,
+  indexing,
   github: {
     getUser: (): Promise<GithubUser | null> => ipcRenderer.invoke('github:getUser'),
     startLogin: (): Promise<DeviceCode> => ipcRenderer.invoke('github:startLogin'),
