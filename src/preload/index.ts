@@ -90,7 +90,13 @@ const backend: BackendApi = {
     resolveDecision: (projectId, handoffId, option) =>
       invoke(b.workflowResolveDecision, projectId, handoffId, option),
     verdicts: (projectId, handoffId) => invoke(b.workflowVerdicts, projectId, handoffId),
-    verifiedPatch: (projectId, handoffId) => invoke(b.workflowVerifiedPatch, projectId, handoffId)
+    verifiedPatch: (projectId, handoffId) => invoke(b.workflowVerifiedPatch, projectId, handoffId),
+    briefPreview: (projectId, approvalId) => invoke(b.workflowBriefPreview, projectId, approvalId),
+    briefs: (projectId, handoffId) => invoke(b.workflowBriefs, projectId, handoffId),
+    candidateDiff: (projectId, handoffId, attempt) =>
+      invoke(b.workflowCandidateDiff, projectId, handoffId, attempt),
+    publishVerified: (projectId, handoffId) =>
+      invoke(b.workflowPublishVerified, projectId, handoffId)
   },
   coding: {
     list: (projectId) => invoke(b.codingList, projectId),

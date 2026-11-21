@@ -34,6 +34,14 @@ Approving the same proposal twice returns the same approval.
 - `refresh(handoffId)` advances one step. Call it after a restart to resume runs that were in flight.
 - `startHandoff` is idempotent per approval: while a handoff is open it is returned, not restarted.
 
+## Reviewing and delivering a handoff (Coding tab)
+
+- `briefPreview(projectId, approvalId)`: the Markdown `codingBrief` produces from the frozen packet, before a start.
+- `briefs(projectId, handoffId)`: per attempt, `markdown` (the workflow's brief: `codingBrief` on a start, `steerBrief`/`correctionBrief` on a follow-up) and `submitted`, the exact provider input. Both are read back from the coding run's frozen input and the stored turn (`turnPrompt` in `src/main/coding/gateway.ts`), so they match what was sent, byte for byte, after a restart too. Brief wording belongs to `src/main/workflow/brief.ts`; the provider wrapper (workspace, shell note, export step) to `turnPrompt`.
+- `candidateDiff(projectId, handoffId, attempt)`: `git show` of any materialized candidate, verified or not.
+- `publishVerified(projectId, handoffId)`: pushes the newest locally verified candidate commit to `diogenes/verified-<sha12>` on the authorized repository, without force, with the session token as a header of that one git process. It refuses unverified candidates and the default branch, and records `published` on the handoff. The fallback is `verifiedPatch` plus a manual `git am`.
+- Run events from shell activity carry `shell: 'command' | 'output'`.
+
 ## Repository and base commit
 
 Approval, handoff and correction resolve the authorized repository from the project (GitHub authorization, not the renderer) and fetch the exact indexed commit by SHA into `<userData>/backend/repos/<projectId>.git` (`--depth=1`, pinned under `refs/diogenes/base/`). The GitHub token reaches that one git process as an HTTP header through `GIT_CONFIG_*`, with an otherwise minimal environment. No local clone has to be configured.

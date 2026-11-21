@@ -397,6 +397,7 @@ a {
 .leftpane[hidden],
 .leftpane__panel[hidden],
 .chat[hidden],
+.coding[hidden],
 .inspector[hidden] {
   display: none;
 }
@@ -412,7 +413,8 @@ a {
   border-right: 1px solid var(--dg-border);
 }
 /* Chat width is dragged by the divider (--dg-chat-w), capped so the canvas keeps room. */
-.app[data-left='chat'] > .leftpane {
+.app[data-left='chat'] > .leftpane,
+.app[data-left='coding'] > .leftpane {
   width: clamp(260px, var(--dg-chat-w, 340px), calc(100vw - 420px));
 }
 .leftpane__resize {
@@ -1738,4 +1740,199 @@ button.chat__attach--off:focus-visible {
   flex: none;
   color: var(--dg-text-3);
   font-size: 11px;
+}
+
+/* ---------- Coding (left pane, Coding tab) ----------
+   Same column as Chat. Status first, then one detail view: Handoff, Trace or Diff.
+   OffBit for commands, output, diffs and IDs; Manrope for everything a person reads. */
+.coding {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  font: 500 12px/1.5 var(--dg-font-ui);
+  color: var(--dg-text);
+}
+.coding [data-tone='ok'] {
+  color: var(--dg-ok);
+}
+.coding [data-tone='warn'] {
+  color: var(--dg-warn);
+}
+.coding [data-tone='danger'] {
+  color: var(--dg-danger);
+}
+.coding [data-tone='info'] {
+  color: var(--dg-info);
+}
+.coding p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.coding__empty {
+  padding: var(--dg-space-5);
+  color: var(--dg-text-2);
+}
+.coding__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dg-space-5);
+  padding: var(--dg-space-5);
+}
+.coding__steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--dg-space-2);
+}
+.coding__steps li {
+  padding-top: var(--dg-space-3);
+  border-top: 2px solid var(--dg-border);
+  color: var(--dg-text-3);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.coding__steps li[data-state='done'] {
+  border-top-color: var(--dg-ok);
+  color: var(--dg-text-2);
+}
+.coding__steps li[data-state='current'] {
+  border-top-color: var(--dg-accent);
+  color: var(--dg-text);
+}
+.coding__steps li[data-state='failed'] {
+  border-top-color: var(--dg-danger);
+  color: var(--dg-danger);
+}
+.coding__facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--dg-space-3) var(--dg-space-5);
+  align-items: baseline;
+}
+.coding__facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.coding__attempts {
+  display: inline-flex;
+  gap: var(--dg-space-1);
+}
+.coding__attempts .dg-btn {
+  height: auto;
+  padding: 0 var(--dg-space-3);
+}
+.coding__attempts .dg-btn[aria-pressed='true'] {
+  color: var(--dg-accent);
+  border-color: var(--dg-accent);
+}
+.coding__checks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dg-space-2);
+}
+.coding__checks li {
+  display: grid;
+  grid-template-columns: 4.5em minmax(0, 1fr);
+  gap: var(--dg-space-3);
+  font-weight: 600;
+}
+.coding__mono {
+  font: 400 11px/1.4 var(--dg-font-bit);
+  color: var(--dg-text-2);
+  overflow-wrap: anywhere;
+}
+.coding__views {
+  display: flex;
+  gap: var(--dg-space-2);
+  height: var(--dg-control-h);
+  border-bottom: 1px solid var(--dg-border);
+}
+.coding__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dg-space-4);
+  min-width: 0;
+}
+.coding__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dg-space-4);
+  min-width: 0;
+}
+.coding__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dg-space-2);
+}
+.coding__group ul {
+  margin: 0;
+  padding-left: var(--dg-space-6);
+  overflow-wrap: anywhere;
+}
+.coding__pre {
+  margin: 0;
+  padding: var(--dg-space-4);
+  max-height: 360px;
+  overflow: auto;
+  background: var(--dg-bg);
+  border: 1px solid var(--dg-border);
+  border-radius: var(--dg-radius-control);
+  font: 400 11px/1.45 var(--dg-font-bit);
+  color: var(--dg-text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.coding__diff {
+  max-height: none;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.coding__diff [data-line='add'] {
+  color: var(--dg-ok);
+}
+.coding__diff [data-line='del'] {
+  color: var(--dg-danger);
+}
+.coding__diff [data-line='hunk'] {
+  color: var(--dg-info);
+}
+.coding__diff [data-line='file'] {
+  color: var(--dg-text);
+}
+.coding__trace {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dg-space-3);
+  overflow-wrap: anywhere;
+}
+.coding__trace [data-kind='error'] {
+  color: var(--dg-danger);
+}
+.coding__trace [data-kind='message'] {
+  white-space: pre-wrap;
+}
+.coding__cmd {
+  font: 400 11px/1.4 var(--dg-font-bit);
+  color: var(--dg-text);
+}
+.coding__cmd > span {
+  color: var(--dg-text-3);
 }

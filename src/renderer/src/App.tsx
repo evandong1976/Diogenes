@@ -24,7 +24,10 @@ import {
 } from './canvas/components'
 import { catalogKindsByLevel } from './canvas/diagrams'
 import { ChatPane } from './agent/ChatPane'
+import { CodingPane } from './agent/CodingPane'
 import { useDesignChat } from './agent/useDesignChat'
+
+const PANE_NAME = { chat: 'design chat', coding: 'coding', project: 'project' } as const
 
 function App(): React.JSX.Element {
   const [user, setUser] = useState<GithubUser | null | undefined>(undefined)
@@ -55,7 +58,9 @@ function App(): React.JSX.Element {
   const [selected, setSelected] = useState<ComponentSelection | null>(null)
   // Side panes collapse independently; the chat stays mounted while hidden so nothing resets.
   const [leftOpen, setLeftOpen] = useState(true)
-  const [leftTab, setLeftTab] = useState<'chat' | 'project'>('chat')
+  const [leftTab, setLeftTab] = useState<'chat' | 'coding' | 'project'>('chat')
+  // The approval the Coding tab shows; set when "Send to coding agent" starts a handoff.
+  const [codingFocus, setCodingFocus] = useState<string | null>(null)
   const [inspectorOpen, setInspectorOpen] = useState(true)
   const [chatWidth, setChatWidth] = useState(savedChatWidth)
   const [resizing, setResizing] = useState(false)
@@ -83,6 +88,7 @@ function App(): React.JSX.Element {
     setDrafts({})
     setFocusFile(null)
     setSelected(null)
+    setCodingFocus(null)
     setRepo(next)
     // Index in the background; diagrams use it as evidence once it's ready.
     window.api.indexing.start(next.id).then(setIndexStatus, (e: unknown) =>
@@ -202,7 +208,7 @@ function App(): React.JSX.Element {
           hidden={!leftOpen}
           style={{ '--dg-chat-w': `${chatWidth}px` } as React.CSSProperties}
         >
-          {tab === 'chat' && (
+          {(tab === 'chat' || tab === 'coding') && (
             <PaneResizer width={chatWidth} onWidth={setChatWidth} onDragging={setResizing} />
           )}
           <div className="leftpane__tabs" role="tablist" aria-label="Left pane">
@@ -225,6 +231,23 @@ function App(): React.JSX.Element {
             </button>
             <button
               role="tab"
+              id="tab-coding"
+              className="leftpane__tab dg-label"
+              aria-selected={tab === 'coding'}
+              aria-controls="panel-coding"
+              disabled={!shownRepo}
+              title={shownRepo ? 'Coding agent runs and results' : 'Coding needs a GitHub repo'}
+              onClick={() => setLeftTab('coding')}
+            >
+              Coding
+              {chat.handoffs.some((h) => h.stage === 'coding' || h.stage === 'verifying') && (
+                <span className="leftpane__busy" aria-label="coding run active">
+                  ●
+                </span>
+              )}
+            </button>
+            <button
+              role="tab"
               id="tab-project"
               className="leftpane__tab dg-label"
               aria-selected={tab === 'project'}
@@ -237,8 +260,8 @@ function App(): React.JSX.Element {
             <button
               type="button"
               className="dg-btn dg-btn--ghost pane-toggle leftpane__hide"
-              aria-label={`Hide ${tab === 'chat' ? 'design chat' : 'project'}`}
-              title={`Hide ${tab === 'chat' ? 'design chat' : 'project'} (⌘\\)`}
+              aria-label={`Hide ${PANE_NAME[tab]}`}
+              title={`Hide ${PANE_NAME[tab]} (⌘\\)`}
               onClick={() => setLeftOpen(false)}
             >
               ⟨
@@ -276,6 +299,19 @@ function App(): React.JSX.Element {
               selected={selected}
               hidden={!leftOpen || tab !== 'chat'}
               onOpenSource={setFocusFile}
+              onHandoffStarted={(approvalId) => {
+                setCodingFocus(approvalId)
+                setLeftTab('coding')
+                setLeftOpen(true)
+              }}
+            />
+          )}
+          {shownRepo && (
+            <CodingPane
+              chat={chat}
+              focus={codingFocus}
+              onFocus={setCodingFocus}
+              hidden={!leftOpen || tab !== 'coding'}
             />
           )}
         </div>

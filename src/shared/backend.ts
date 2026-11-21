@@ -23,6 +23,8 @@ import type {
   DecisionOption,
   HandoffRecord,
   ProjectWorkflowState,
+  CandidateDiff,
+  SubmittedBrief,
   Verdict,
   VerifiedPatch
 } from './workflow'
@@ -99,6 +101,17 @@ export interface BackendApi {
     verdicts(projectId: string, handoffId: string): Promise<RecordedVerdict[]>
     /** The newest locally verified candidate as a patch to apply to the developer's repository. */
     verifiedPatch(projectId: string, handoffId: string): Promise<VerifiedPatch>
+    /** The Markdown brief `startHandoff` will submit for this approval (from the frozen packet). */
+    briefPreview(projectId: string, approvalId: string): Promise<string>
+    /** What each attempt actually submitted to the coding agent, oldest first. */
+    briefs(projectId: string, handoffId: string): Promise<SubmittedBrief[]>
+    /** The candidate commit of one attempt as a diff, verified or not. */
+    candidateDiff(projectId: string, handoffId: string, attempt: number): Promise<CandidateDiff>
+    /**
+     * Pushes the newest locally verified candidate to `diogenes/verified-<sha>` on the authorized
+     * repository. Refuses unverified candidates and the default branch. Idempotent per candidate.
+     */
+    publishVerified(projectId: string, handoffId: string): Promise<HandoffRecord>
   }
   coding: {
     list(projectId: string): Promise<CodingRunSummary[]>
@@ -133,6 +146,10 @@ export const backendChannels = {
   workflowResolveDecision: 'backend:workflow:resolveDecision',
   workflowVerdicts: 'backend:workflow:verdicts',
   workflowVerifiedPatch: 'backend:workflow:verifiedPatch',
+  workflowBriefPreview: 'backend:workflow:briefPreview',
+  workflowBriefs: 'backend:workflow:briefs',
+  workflowCandidateDiff: 'backend:workflow:candidateDiff',
+  workflowPublishVerified: 'backend:workflow:publishVerified',
   codingList: 'backend:coding:list',
   codingStatus: 'backend:coding:status',
   codingRetry: 'backend:coding:retry',

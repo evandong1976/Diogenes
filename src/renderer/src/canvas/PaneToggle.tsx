@@ -28,7 +28,9 @@ export function PaneToggle({ side }: { side: 'left' | 'inspector' }): React.JSX.
   const { panes } = useWorkspace()
   const open = side === 'left' ? panes.left : panes.inspector
   const name =
-    side === 'left' ? (panes.leftTab === 'chat' ? 'design chat' : 'project') : 'inspector'
+    side === 'left'
+      ? ({ chat: 'design chat', coding: 'coding', project: 'project' } as const)[panes.leftTab]
+      : 'inspector'
   const label = `${open ? 'Hide' : 'Show'} ${name}`
   return (
     <button

@@ -11,7 +11,7 @@ import { geminiModelClient } from '../design/model'
 import { getAuthorizedRepo, githubFetch, githubGitAuthHeader, onSessionChange } from '../github'
 import { readIndexedGraph } from '../indexing/ipc'
 import { catalogVerifier, refundRetryVerifier } from '../workflow/verifiers'
-import { GitMirror } from './repos'
+import { GitMirror, pushBranch } from './repos'
 import {
   createBackend,
   type AgentBackend,
@@ -19,6 +19,7 @@ import {
   type ProjectAuthorizer
 } from './backend'
 import { backendChannels as c, type BackendApi } from '../../shared/backend'
+import type { CandidatePublisher } from '../../shared/workflow'
 
 const ACCESS_TTL_MS = 5 * 60_000
 
@@ -54,6 +55,31 @@ export function githubAuthorizer(): ProjectAuthorizer {
       }
       cache.set(projectId, { access, at: Date.now() })
       return access
+    }
+  }
+}
+
+/**
+ * Pushes a verified candidate to a new branch of the authorized GitHub repository with the
+ * session's token (as a header of that one git process). Refuses the default branch and never
+ * forces, so an existing branch with other commits is left alone.
+ */
+function githubPublisher(): CandidatePublisher {
+  return {
+    async push({ projectId, repository, gitDir, sha, branch }) {
+      const repo = await getAuthorizedRepo(Number(projectId))
+      if (!repo || repo.fullName !== repository)
+        throw new Error(`The signed-in GitHub account cannot read ${repository}.`)
+      if (branch === repo.defaultBranch)
+        throw new Error('Refusing to publish to the default branch.')
+      await pushBranch({
+        gitDir,
+        url: `https://github.com/${repository}.git`,
+        sha,
+        branch,
+        authHeader: await githubGitAuthHeader()
+      })
+      return { url: `https://github.com/${repository}/compare/${repo.defaultBranch}...${branch}` }
     }
   }
 }
@@ -112,6 +138,7 @@ async function openBackend(): Promise<AgentBackend> {
       authHeader: githubGitAuthHeader
     }),
     verifiers: [refundRetryVerifier(), catalogVerifier()],
+    publisher: githubPublisher(),
     // Additive, versioned and advisory-locked, so every app start may apply pending migrations.
     migrate: true
   })
@@ -171,6 +198,14 @@ function registerHandlers(call: Call): void {
       backend.workflow.verdicts(p, h),
     [c.workflowVerifiedPatch]: (backend: AgentBackend, p: string, h: string) =>
       backend.workflow.verifiedPatch(p, h),
+    [c.workflowBriefPreview]: (backend: AgentBackend, p: string, a: string) =>
+      backend.workflow.briefPreview(p, a),
+    [c.workflowBriefs]: (backend: AgentBackend, p: string, h: string) =>
+      backend.workflow.briefs(p, h),
+    [c.workflowCandidateDiff]: (backend: AgentBackend, p: string, h: string, attempt: number) =>
+      backend.workflow.candidateDiff(p, h, int(attempt)),
+    [c.workflowPublishVerified]: (backend: AgentBackend, p: string, h: string) =>
+      backend.workflow.publishVerified(p, h),
     [c.codingList]: (backend: AgentBackend, p: string) => backend.coding.list(p),
     [c.codingStatus]: (backend: AgentBackend, p: string, r: string) => backend.coding.status(p, r),
     [c.codingRetry]: (backend: AgentBackend, p: string, r: string) => backend.coding.retry(p, r),
