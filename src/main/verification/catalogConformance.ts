@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, relative } from 'node:path'
+import { isAbsolute, join, relative, sep } from 'node:path'
 import { inScope } from '../coding/candidate.ts'
 import { runIndexJob } from '../indexing/job.ts'
 import { loadTypescript } from '../indexing/scip.ts'
@@ -155,7 +155,10 @@ function typecheck(baseRoot: string, candRoot: string, changed: string[]): Check
   const tool = `typescript ${ts.version} (compiler API, noEmit)`
   const run = (root: string): { keys: string[]; lines: Map<string, string> } | null => {
     const config = ts.findConfigFile(root, ts.sys.fileExists, 'tsconfig.json')
-    if (!config || !config.startsWith(root)) return null
+    // TypeScript returns '/'-separated paths while `root` uses the OS separator, so compare with
+    // relative() (which accepts both) instead of startsWith: a config above the root doesn't count.
+    const fromRoot = config ? relative(root, config) : '..'
+    if (!config || fromRoot.startsWith('..') || isAbsolute(fromRoot)) return null
     const read = ts.readConfigFile(config, ts.sys.readFile)
     const parsed = ts.parseJsonConfigFileContent(read.config ?? {}, ts.sys, root)
     const program = ts.createProgram({
@@ -165,7 +168,7 @@ function typecheck(baseRoot: string, candRoot: string, changed: string[]): Check
     const keys: string[] = []
     const lines = new Map<string, string>()
     for (const d of ts.getPreEmitDiagnostics(program)) {
-      const file = d.file ? relative(root, d.file.fileName) : '(config)'
+      const file = d.file ? relative(root, d.file.fileName).split(sep).join('/') : '(config)'
       const text = ts.flattenDiagnosticMessageText(d.messageText, ' ')
       const k = `${file}|TS${d.code}|${text}`
       keys.push(k)
