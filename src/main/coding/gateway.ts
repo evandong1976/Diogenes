@@ -475,7 +475,7 @@ function newTurn(index: number, kind: CodingRunTurn['kind']): CodingRunTurn {
 const SUMMARY_NOTE =
   'When you finish, reply with two or three plain sentences for the developer: what you changed in their code, in which files, and anything they should know.'
 
-const SHELL_NOTE = `Work with ordinary shell commands in ${workspaceRoot}, one simple command at a time: ls, cat, grep and sed to read and edit files, git status and git diff to review your change, and a focused check on the files you touched.`
+const SHELL_NOTE = `Work in ${workspaceRoot}. It contains only the approved source files and has no Git metadata. Use simple shell commands such as ls, cat, grep and sed to inspect and edit those files. Run a focused check where possible. The export command builds the patch against the pinned source copies.`
 
 export function turnPrompt(input: StartCodingRun, turn: CodingRunTurn): string {
   const finish = `When you are done, run exactly this command and confirm it printed DIOGENES_CANDIDATE_WRITTEN:\n${exportCommand(turn.exportToken)}`
