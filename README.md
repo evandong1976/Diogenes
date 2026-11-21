@@ -4,11 +4,11 @@ A visual system-design canvas for coding agents. Read a repo (or start blank), s
 
 ## Setup
 
-Requires Node 22+.
+Requires Node 22+ and pnpm (`corepack enable`).
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 ## Layout
@@ -23,6 +23,6 @@ The renderer has no Node access. Anything touching disk or network goes in `main
 
 ## Scripts
 
-- `npm run dev`: run the app with hot reload
-- `npm run typecheck` / `npm run lint` / `npm run format`
-- `npm run build:mac` (or `:win`, `:linux`): package the app
+- `pnpm dev`: run the app with hot reload
+- `pnpm typecheck` / `pnpm lint` / `pnpm format`
+- `pnpm build:mac` (or `:win`, `:linux`): package the app

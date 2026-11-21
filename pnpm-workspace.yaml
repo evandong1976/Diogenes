@@ -1,0 +1,5 @@
+# electron-builder needs a flat node_modules
+shamefullyHoist: true
+allowBuilds:
+  # only used for Squirrel.Windows installers; we ship NSIS
+  electron-winstaller: false
