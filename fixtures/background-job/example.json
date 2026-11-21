@@ -1,0 +1,95 @@
+{
+  "currentGraph": {
+    "initialStateId": "queued",
+    "states": [
+      {
+        "id": "queued",
+        "label": "Queued",
+        "sources": [
+          { "path": "job.ts", "startLine": 1, "endLine": 1 },
+          { "path": "job.ts", "startLine": 8, "endLine": 10 }
+        ]
+      },
+      {
+        "id": "running",
+        "label": "Running",
+        "sources": [
+          { "path": "job.ts", "startLine": 1, "endLine": 1 },
+          { "path": "worker.ts", "startLine": 4, "endLine": 4 }
+        ]
+      },
+      {
+        "id": "succeeded",
+        "label": "Succeeded",
+        "sources": [
+          { "path": "job.ts", "startLine": 1, "endLine": 1 },
+          { "path": "worker.ts", "startLine": 8, "endLine": 8 }
+        ]
+      },
+      {
+        "id": "failed",
+        "label": "Failed",
+        "sources": [
+          { "path": "job.ts", "startLine": 1, "endLine": 1 },
+          { "path": "worker.ts", "startLine": 10, "endLine": 10 }
+        ]
+      }
+    ],
+    "transitions": [
+      {
+        "id": "queued->running",
+        "from": "queued",
+        "to": "running",
+        "trigger": "processJob is called on a queued job",
+        "sources": [
+          { "path": "job.ts", "startLine": 8, "endLine": 10 },
+          { "path": "worker.ts", "startLine": 3, "endLine": 4 }
+        ]
+      },
+      {
+        "id": "running->succeeded",
+        "from": "running",
+        "to": "succeeded",
+        "trigger": "job.run() resolves without throwing",
+        "sources": [{ "path": "worker.ts", "startLine": 4, "endLine": 8 }]
+      },
+      {
+        "id": "running->failed",
+        "from": "running",
+        "to": "failed",
+        "trigger": "job.run() throws or rejects",
+        "sources": [{ "path": "worker.ts", "startLine": 4, "endLine": 11 }]
+      }
+    ]
+  },
+  "proposedEdit": {
+    "kind": "edit",
+    "summary": "Retry a failed job run once before marking the job as failed, allowing the retry to succeed.",
+    "replaceTransitionId": "running->failed",
+    "addStates": [{ "id": "retrying", "label": "Retrying" }],
+    "addTransitions": [
+      {
+        "id": "running->retrying",
+        "from": "running",
+        "to": "retrying",
+        "trigger": "job.run() throws or rejects on the initial attempt (0 retries used; limit of 1 retry attempt)"
+      },
+      {
+        "id": "retrying->succeeded",
+        "from": "retrying",
+        "to": "succeeded",
+        "trigger": "job.run() resolves without throwing on retry attempt 1 of 1 (limit of 1 retry attempt)"
+      },
+      {
+        "id": "retrying->failed",
+        "from": "retrying",
+        "to": "failed",
+        "trigger": "job.run() throws or rejects on retry attempt 1 of 1 (1 retry attempt limit exhausted)"
+      }
+    ]
+  },
+  "clarification": {
+    "kind": "clarification",
+    "question": "Which transition would you like to change (e.g., queued->running, running->succeeded, or running->failed), and what new states or behavior should replace it?"
+  }
+}
