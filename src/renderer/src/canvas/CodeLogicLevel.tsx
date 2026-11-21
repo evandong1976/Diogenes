@@ -1,12 +1,13 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { GithubRepo } from '../../../preload'
 import type { CatalogGraph } from '../../../shared/catalog'
 import type { CurrentGraph, ProposedEdit } from '../../../shared/gemini'
+import type { IndexStatus } from '../../../shared/indexing'
 import { applyEdit } from '../../../shared/graph'
 import { DiagramCanvas } from './DiagramCanvas'
 import { DrawLayer } from './DrawLayer'
 import { catalogStateMachines, stateDiagram, stateGraphFromCatalog } from './diagrams'
-import { exampleEdit, initialLogic, type LogicState } from './logic'
+import { exampleEdit, initialLogic, shouldAutoBuild, type LogicState } from './logic'
 
 // Gemini proposes from structure and the drawing; source lines are display-only here, and the
 // main process may not hold the files they point into (an indexed state machine, for example).
@@ -24,9 +25,17 @@ interface Props {
   onLogicChange: React.Dispatch<React.SetStateAction<LogicState>>
   /** State machines the index found can be loaded without calling Gemini. */
   catalog: CatalogGraph | null
+  /** The repo is built automatically once indexing settles, so the index can rank its files. */
+  indexStatus: IndexStatus | null
 }
 
-export function CodeLogicLevel({ repo, logic, onLogicChange, catalog }: Props): React.JSX.Element {
+export function CodeLogicLevel({
+  repo,
+  logic,
+  onLogicChange,
+  catalog,
+  indexStatus
+}: Props): React.JSX.Element {
   const machines = useMemo(() => catalogStateMachines(catalog), [catalog])
   const canvasRef = useRef<HTMLDivElement>(null)
   const [drawing, setDrawing] = useState(false)
@@ -61,8 +70,16 @@ export function CodeLogicLevel({ repo, logic, onLogicChange, catalog }: Props): 
     }
   }
 
+  // Every replacement keeps `autoBuiltFor`, so returning to the example never rebuilds the repo.
+  const replaceLogic = (next: Omit<LogicState, 'version' | 'autoBuiltFor'>): void =>
+    onLogicChange((current) => ({
+      ...next,
+      version: current.version + 1,
+      autoBuiltFor: current.autoBuiltFor
+    }))
+
   const buildFromRepo = (): Promise<void> =>
-    run('Reading repo…', async () => {
+    run(repo ? `Finding the state machine in ${repo.fullName}…` : 'Reading repo…', async () => {
       if (!repo) return
       const { graph, files } = await window.api.gemini.buildRepoGraph({
         id: repo.id,
@@ -70,24 +87,33 @@ export function CodeLogicLevel({ repo, logic, onLogicChange, catalog }: Props): 
         branch: repo.defaultBranch
       })
       reset()
-      onLogicChange({
+      replaceLogic({
         graph,
         source: `${repo.fullName} · ${files.length} file${files.length === 1 ? '' : 's'} read`,
-        isExample: false,
-        version: logic.version + 1
+        isExample: false
       })
     })
+
+  // Opening a repo builds its own state machine once, after indexing settles (finished or failed).
+  // Until then, and if that build fails, the bundled example stays on the canvas.
+  const autoBuild = shouldAutoBuild(repo?.id, logic, indexStatus?.state)
+  useEffect(() => {
+    if (!autoBuild || !repo) return
+    onLogicChange((current) => ({ ...current, autoBuiltFor: repo.id }))
+    void buildFromRepo()
+    // Runs when the conditions first hold; buildFromRepo reads the latest props itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoBuild])
 
   const loadMachine = (id: string): void => {
     const machine = machines.find((m) => m.id === id)
     if (!machine) return
     reset()
     setError(null)
-    onLogicChange({
+    replaceLogic({
       graph: stateGraphFromCatalog(machine),
       source: `Index · ${machine.name}`,
-      isExample: false,
-      version: logic.version + 1
+      isExample: false
     })
   }
 
@@ -95,7 +121,11 @@ export function CodeLogicLevel({ repo, logic, onLogicChange, catalog }: Props): 
     run('Loading example…', async () => {
       await window.api.gemini.useFixture()
       reset()
-      onLogicChange({ ...initialLogic, version: logic.version + 1 })
+      replaceLogic({
+        graph: initialLogic.graph,
+        source: initialLogic.source,
+        isExample: true
+      })
     })
 
   const propose = (): Promise<void> =>
@@ -128,7 +158,8 @@ export function CodeLogicLevel({ repo, logic, onLogicChange, catalog }: Props): 
         logic.isExample && logic.source === initialLogic.source
           ? { graph: logic.graph, edit: proposal }
           : undefined,
-      version: logic.version + 1
+      version: logic.version + 1,
+      autoBuiltFor: logic.autoBuiltFor
     })
     reset()
   }
