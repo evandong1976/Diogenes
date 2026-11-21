@@ -1673,8 +1673,12 @@ button.chat__source:focus-visible {
 }
 .chat__actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--dg-space-4);
+}
+.chat__actions .dg-btn {
+  white-space: nowrap;
 }
 
 /* Composer */

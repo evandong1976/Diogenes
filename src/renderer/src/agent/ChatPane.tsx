@@ -616,7 +616,7 @@ function ProposalCard({
               void chat.approve(proposal)
             }}
           >
-            Accept &amp; send to Claude…
+            Approve &amp; send…
           </button>
         </div>
       )}
