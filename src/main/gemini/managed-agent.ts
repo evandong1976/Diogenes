@@ -3,6 +3,7 @@ import { checksFromEdits, type AcceptanceCheck } from '../../shared/checks'
 import type { CurrentGraph, ManagedAgentResult, ProposedEdit } from '../../shared/gemini'
 import { applyEdit } from '../../shared/graph'
 import {
+  isSafeRepoPath,
   validateGraph,
   validateProposal,
   validateRepoGraph,
@@ -226,6 +227,9 @@ export function buildChangeRun(
   files: FixtureSource[],
   reporter: string
 ): { checks: AcceptanceCheck[]; sources: InlineSource[]; input: string } {
+  // Every file lands under repo/ and original/; a path that could resolve elsewhere is refused.
+  const unsafe = files.find((f) => !isSafeRepoPath(f.path))
+  if (unsafe) throw new Error(`Refusing to stage an invalid file path: ${unsafe.path}`)
   const checks = checksFromEdits(base, edits)
   const after = edits.reduce(applyEdit, base)
   const at = (path: string): string => `/workspace/diogenes/${path}`
