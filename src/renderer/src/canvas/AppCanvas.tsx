@@ -50,6 +50,20 @@ function Brand({
 }): React.ReactNode {
   const brand = brandFor({ id: box.id, label: box.name, detail: box.summary })
   if (!brand) return fallback
+  if (brand.art)
+    return (
+      <span
+        className="flow-brand flow-brand--art"
+        data-light={brand.lightTile || undefined}
+        title={brand.title}
+      >
+        <svg
+          viewBox={brand.art.viewBox}
+          aria-hidden="true"
+          dangerouslySetInnerHTML={{ __html: brand.art.body }}
+        />
+      </span>
+    )
   return (
     <span
       className="flow-brand"

@@ -22,3 +22,13 @@ test('brands, shapes and methods', () => {
   expect(shapeFor(node('jobs', { type: 'QUEUE' }), 'resource')).toBe('queue')
   expect(methodOf(node('users', { detail: 'http POST /api/users' }))).toBe('POST')
 })
+
+test('AWS services get their own icon, ahead of the engine they run', () => {
+  expect(brandFor(node('AWS S3'))?.title).toBe('Amazon S3')
+  expect(brandFor(node('AWS RDS', { detail: 'Postgres for uploads' }))?.title).toBe('Amazon RDS')
+  expect(brandFor(node('Uploads', { detail: 'Stored in Amazon S3 buckets' }))?.title).toBe(
+    'Amazon S3'
+  )
+  expect(brandFor(node('AWS'))?.title).toBe('AWS')
+  expect(brandFor(node('User sessions', { id: 'x' }))).toBeNull()
+})

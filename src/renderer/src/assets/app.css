@@ -1297,6 +1297,21 @@ button.chat__source:focus-visible {
   width: 17px;
   height: 17px;
 }
+/* Full-color logos (AWS services and the like) bring their own color: no tile behind them. */
+.flow-brand--art {
+  background: none;
+}
+.flow-brand--art svg {
+  width: 26px;
+  height: 26px;
+}
+.flow-brand--art[data-light] {
+  background: #ece8dc;
+}
+.flow-brand--art[data-light] svg {
+  width: 18px;
+  height: 18px;
+}
 
 /* Screen: a window with a sketch of its UI. */
 .flow-screen__chrome {

@@ -64,6 +64,7 @@ import {
   siTypeorm,
   type SimpleIcon
 } from 'simple-icons'
+import { ART, type ArtIcon } from './artIcons'
 import type { DiagramNode } from './diagrams'
 
 // Checked in order against the node's name, detail and ID; the first match wins. More specific
@@ -132,9 +133,53 @@ const RULES: [RegExp, SimpleIcon][] = [
   [/\bnode\b|node\.js/, siNodedotjs]
 ]
 
+// Full-color logos, checked before RULES: AWS services by name (so "AWS RDS" running Postgres
+// shows RDS), then products simple-icons dropped. The bare "aws" rule comes last.
+const ART_RULES: [RegExp, ArtIcon][] = [
+  [/\bs3\b|simple storage/, ART.s3],
+  [/\brds\b/, ART.rds],
+  [/aurora/, ART.aurora],
+  [/dynamo/, ART.dynamodb],
+  [/\blambda\b/, ART.lambda],
+  [/api ?gateway/, ART.apiGateway],
+  [/cognito/, ART.cognito],
+  [/\bsqs\b/, ART.sqs],
+  [/\bsns\b/, ART.sns],
+  [/\bses\b|simple email/, ART.ses],
+  [/\bec2\b/, ART.ec2],
+  [/\becs\b/, ART.ecs],
+  [/\beks\b/, ART.eks],
+  [/fargate/, ART.fargate],
+  [/cloudfront/, ART.cloudfront],
+  [/cloudwatch/, ART.cloudwatch],
+  [/kinesis/, ART.kinesis],
+  [/eventbridge/, ART.eventbridge],
+  [/step functions?/, ART.stepFunctions],
+  [/secrets manager/, ART.secretsManager],
+  [/elasticache/, ART.elasticache],
+  [/route ?53/, ART.route53],
+  [/\biam\b/, ART.iam],
+  [/amplify/, ART.amplify],
+  [/appsync/, ART.appsync],
+  [/redshift/, ART.redshift],
+  [/opensearch/, ART.opensearch],
+  [/documentdb/, ART.documentdb],
+  [/openai|chatgpt|\bgpt-/, ART.openai],
+  [/slack/, ART.slack],
+  [/twilio/, ART.twilio],
+  [/sendgrid/, ART.sendgrid],
+  [/\bexpo\b/, ART.expo],
+  [/\baws\b|amazon web services|aws-sdk/, ART.aws]
+]
+
 export interface Brand {
   title: string
+  /** One-color glyph path (simple-icons); empty when `art` is set. */
   path: string
+  /** Full-color logo, drawn as-is instead of `path` on a brand tile. */
+  art?: ArtIcon
+  /** The art is black (OpenAI, Expo) and needs a light tile to show on the dark canvas. */
+  lightTile?: boolean
   hex: string
   /** Glyph color that reads on the brand color. */
   ink: string
@@ -148,6 +193,12 @@ const inkFor = (hex: string): string => {
 
 export function brandFor(node: Pick<DiagramNode, 'id' | 'label' | 'detail'>): Brand | null {
   const text = `${node.label} ${node.detail ?? ''} ${node.id}`.toLowerCase()
+  const art = ART_RULES.find(([re]) => re.test(text))?.[1]
+  if (art) {
+    const hex = art === ART.aws || /^Amazon|^AWS/.test(art.title) ? '#FF9900' : '#ECE8DC'
+    const lightTile = art === ART.openai || art === ART.expo
+    return { title: art.title, path: '', art, hex, ink: '#0B0D09', lightTile }
+  }
   const icon = RULES.find(([re]) => re.test(text))?.[1]
   if (!icon) return null
   // Near-black brands (Vercel, GitHub, Next) vanish on the dark canvas: lift them to cream.

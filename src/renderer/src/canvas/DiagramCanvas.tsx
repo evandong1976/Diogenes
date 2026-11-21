@@ -83,6 +83,15 @@ function KindIcon({ kind }: { kind: DiagramNode['catalogKind'] }): React.JSX.Ele
 }
 
 function BrandIcon({ brand }: { brand: Brand }): React.JSX.Element {
+  if (brand.art)
+    return (
+      <svg
+        className="dg-node__icon"
+        viewBox={brand.art.viewBox}
+        aria-hidden="true"
+        dangerouslySetInnerHTML={{ __html: brand.art.body }}
+      />
+    )
   return (
     <svg className="dg-node__icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       <path d={brand.path} />
