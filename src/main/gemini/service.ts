@@ -4,8 +4,7 @@ import {
   proposalSchema,
   validateGraph,
   validateProposal,
-  type FixtureSource,
-  type Schema
+  type FixtureSource
 } from './contracts.ts'
 
 export type Model = 'gemini-4-hydrogen' | 'gemini-4-carbon'
@@ -22,7 +21,7 @@ export async function generate(
   model: Model,
   instruction: string,
   parts: Part[],
-  schema: Schema
+  schema: Record<string, unknown>
 ): Promise<unknown> {
   const key = process.env.GEMINI_API_KEY?.trim()
   if (!key) throw new Error('GEMINI_API_KEY is missing from the main-process environment.')
