@@ -656,6 +656,146 @@ strong.sidebar__name {
   --dg-node-bc: var(--dg-accent);
 }
 
+/* ---------- Component silhouettes + brands ---------- */
+/* Branded: the tech's own color on the tile, the edge stripe and a faint wash. */
+.component[data-branded] {
+  border-left: 3px solid var(--brand);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--brand) 10%, transparent), transparent 55%),
+    var(--dg-surface-2);
+}
+.component[data-branded] .component__tile {
+  width: 28px;
+  height: 28px;
+  background: var(--brand);
+  border-color: transparent;
+  color: var(--brand-ink);
+}
+.component[data-branded] .component__tile .dg-node__icon {
+  width: 17px;
+  height: 17px;
+  color: inherit;
+}
+.component[data-branded] .dg-node__type {
+  color: var(--brand);
+}
+
+/* Store: a cylinder, elliptical rim on top and a rounded base. */
+.component[data-shape='store'] {
+  border-radius: 130px / 14px;
+  padding-top: 12px;
+}
+.component[data-shape='store']::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  top: -1px;
+  height: 26px;
+  border: 1px solid var(--dg-node-bc);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--brand, var(--dg-info)) 14%, var(--dg-surface-3));
+  pointer-events: none;
+}
+.component[data-shape='store'][data-branded]::before {
+  border-left-width: 3px;
+  border-left-color: var(--brand);
+}
+.component[data-shape='store'] .dg-node__footer {
+  border-radius: 0 0 130px 130px / 0 0 14px 14px;
+}
+
+/* Queue: messages stacked behind the card. */
+.component[data-shape='queue'] {
+  box-shadow:
+    4px 4px 0 -1px var(--dg-surface-2),
+    4px 4px 0 0 var(--dg-node-bc),
+    8px 8px 0 -1px var(--dg-surface-2),
+    8px 8px 0 0 var(--dg-node-bc);
+}
+
+/* View: a browser window, traffic lights and the route in the address bar. */
+.component__chrome {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--dg-border);
+  background: var(--dg-surface-1);
+  border-radius: calc(var(--dg-node-radius) - 1px) calc(var(--dg-node-radius) - 1px) 0 0;
+}
+.component__chrome i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dg-border-strong);
+}
+.component__chrome i:nth-child(1) {
+  background: #e0662a;
+}
+.component__chrome i:nth-child(2) {
+  background: #f2c94c;
+}
+.component__chrome i:nth-child(3) {
+  background: #8fa33a;
+}
+.component__chrome span {
+  flex: 1;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--dg-bg);
+  color: var(--dg-text-2);
+  font-size: 9px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.component[data-shape='view'] .react-flow__handle.dg-port--in {
+  top: calc(22px + var(--dg-node-header-h) / 2 - var(--dg-port-size) / 2);
+}
+
+/* Endpoint: a route tag with the HTTP method in its color. */
+.component[data-shape='endpoint'] {
+  border-radius: 14px;
+}
+.component__method {
+  flex: none;
+  padding: 3px 5px;
+  border-radius: 3px;
+  font: 700 9px/1 var(--dg-font-bit);
+  letter-spacing: 0.04em;
+  color: var(--dg-bg);
+  background: var(--dg-port-request);
+}
+.component__method[data-method='GET'] {
+  background: var(--dg-ok);
+}
+.component__method[data-method='PUT'],
+.component__method[data-method='PATCH'] {
+  background: var(--dg-warn);
+}
+.component__method[data-method='DELETE'] {
+  background: var(--dg-danger);
+}
+
+/* Service: a server, rack rails down the left edge. */
+.component[data-shape='service']:not([data-branded]) {
+  border-left: 4px double var(--dg-node-bc);
+}
+
+/* Trigger: a rounded clock-like capsule. */
+.component[data-shape='trigger'] {
+  border-radius: 22px;
+}
+.component[data-shape='trigger'] .component__tile,
+.component[data-shape='states'] .component__tile {
+  border-radius: 50%;
+}
+.component[data-shape='store'] .react-flow__handle.dg-port--in {
+  top: calc(12px + var(--dg-node-header-h) / 2 - var(--dg-port-size) / 2);
+
 /* ---------- Design chat: sidebar threads + right-hand pane ---------- */
 .app[data-chat] {
   grid-template-columns: 248px minmax(0, 1fr) 360px;

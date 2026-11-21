@@ -15,6 +15,7 @@ import {
   locateAnalyzers,
   planProjects,
   readScipIndex,
+  writeEmptyScipIndex,
   runScipTypescript,
   scipKindNames,
   writeFallbackTsconfig
@@ -86,46 +87,60 @@ export async function runIndexJob(
 
   onStage('indexing')
   const scipPath = join(input.outDir, 'index.scip')
-  const plan = await planProjects(src)
-  let run = await runScipTypescript({
-    root: src,
-    output: scipPath,
-    projects: plan.projects,
-    inferTsconfig: plan.infer,
-    timeoutMs: SCIP_TIMEOUT_MS
-  })
-  const produced = async (): Promise<boolean> =>
-    stat(scipPath).then(
-      (s) => s.size > 0,
-      () => false
-    )
-  if (!run.timedOut && !(await produced())) {
-    // Commonly a tsconfig that `extends` an uninstalled package. Retry with a permissive config
-    // so the source is still indexed; path aliases from the original config are lost.
+  // A repo with no TypeScript/JavaScript (README-only, Python, …) gives scip-typescript nothing to
+  // index, so it fails. Record an empty code index instead; manifests still feed the catalog.
+  const hasScripts = snap.files.some(
+    (f) => (f.language === 'typescript' || f.language === 'javascript') && f.reason !== 'too-large'
+  )
+  if (!hasScripts) {
     diagnostics.push({
-      severity: 'warning',
-      code: 'tsconfig-unusable',
-      message: `scip-typescript indexed nothing with the repository's tsconfig; retried with a fallback config. Output: ${run.output.trim().slice(0, 2000)}`
+      severity: 'info',
+      code: 'no-typescript-sources',
+      message: 'No TypeScript or JavaScript files to analyze; only manifests were read.'
     })
-    const fallback = await writeFallbackTsconfig(src)
-    run = await runScipTypescript({
+    await writeEmptyScipIndex(scipPath)
+  } else {
+    const plan = await planProjects(src)
+    let run = await runScipTypescript({
       root: src,
       output: scipPath,
-      projects: [fallback],
-      inferTsconfig: false,
+      projects: plan.projects,
+      inferTsconfig: plan.infer,
       timeoutMs: SCIP_TIMEOUT_MS
     })
-  }
-  if (run.timedOut) throw new Error('scip-typescript timed out.')
-  if (!(await produced())) {
-    throw new Error(`scip-typescript produced no index. ${run.output.trim().slice(0, 2000)}`)
-  }
-  if (run.exitCode !== 0 || /error/i.test(run.output)) {
-    diagnostics.push({
-      severity: run.exitCode === 0 ? 'info' : 'warning',
-      code: 'scip-typescript-output',
-      message: run.output.trim().slice(0, 4000)
-    })
+    const produced = async (): Promise<boolean> =>
+      stat(scipPath).then(
+        (s) => s.size > 0,
+        () => false
+      )
+    if (!run.timedOut && !(await produced())) {
+      // Commonly a tsconfig that `extends` an uninstalled package. Retry with a permissive config
+      // so the source is still indexed; path aliases from the original config are lost.
+      diagnostics.push({
+        severity: 'warning',
+        code: 'tsconfig-unusable',
+        message: `scip-typescript indexed nothing with the repository's tsconfig; retried with a fallback config. Output: ${run.output.trim().slice(0, 2000)}`
+      })
+      const fallback = await writeFallbackTsconfig(src)
+      run = await runScipTypescript({
+        root: src,
+        output: scipPath,
+        projects: [fallback],
+        inferTsconfig: false,
+        timeoutMs: SCIP_TIMEOUT_MS
+      })
+    }
+    if (run.timedOut) throw new Error('scip-typescript timed out.')
+    if (!(await produced())) {
+      throw new Error(`scip-typescript produced no index. ${run.output.trim().slice(0, 2000)}`)
+    }
+    if (run.exitCode !== 0 || /error/i.test(run.output)) {
+      diagnostics.push({
+        severity: run.exitCode === 0 ? 'info' : 'warning',
+        code: 'scip-typescript-output',
+        message: run.output.trim().slice(0, 4000)
+      })
+    }
   }
 
   onStage('analyzing')
