@@ -30,6 +30,7 @@ import {
   useWorkspace
 } from './components'
 import type { CatalogProtocol } from '../../../shared/catalog'
+import { brandFor, methodOf, shapeFor, type Brand } from './brands'
 
 type ComponentData = DiagramNode & {
   outProtocol: CatalogProtocol
@@ -74,11 +75,22 @@ function KindIcon({ kind }: { kind: DiagramNode['catalogKind'] }): React.JSX.Ele
   )
 }
 
+function BrandIcon({ brand }: { brand: Brand }): React.JSX.Element {
+  return (
+    <svg className="dg-node__icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d={brand.path} />
+    </svg>
+  )
+}
+
 /** The canvas component card: header, optional file rows, status, evidence footer (v0.3). */
 function ComponentView({ id, data, selected }: NodeProps<ComponentNode>): React.JSX.Element {
   const linkFile = useContext(LinkFileContext)
   const [dropping, setDropping] = useState(false)
   const kind = guessKind(data)
+  const brand = brandFor(data)
+  const shape = shapeFor(data, kind)
+  const method = shape === 'endpoint' ? methodOf(data) : undefined
   const resolution =
     data.change === 'added' ? 'proposed' : data.unresolved ? 'unresolved' : data.resolution
   const state = selected ? 'selected' : data.change === 'removed' ? 'error' : undefined
@@ -89,6 +101,13 @@ function ComponentView({ id, data, selected }: NodeProps<ComponentNode>): React.
   return (
     <div
       className="dg-node component"
+      data-shape={shape}
+      data-branded={brand ? true : undefined}
+      style={
+        brand
+          ? ({ '--brand': brand.hex, '--brand-ink': brand.ink } as React.CSSProperties)
+          : undefined
+      }
       data-resolution={resolution}
       data-state={state}
       data-dropping={dropping || undefined}
@@ -113,16 +132,29 @@ function ComponentView({ id, data, selected }: NodeProps<ComponentNode>): React.
         className="dg-port dg-port--in"
         data-protocol={data.outProtocol}
       />
+      {shape === 'view' && (
+        <div className="component__chrome" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+          <span className="dg-data">{data.detail ?? '/'}</span>
+        </div>
+      )}
       <div className="dg-node__header">
-        <span className="component__tile">
-          <KindIcon kind={kind} />
+        <span className="component__tile" title={brand?.title}>
+          {brand ? <BrandIcon brand={brand} /> : <KindIcon kind={kind} />}
         </span>
+        {method && (
+          <span className="component__method" data-method={method}>
+            {method}
+          </span>
+        )}
         <span className="dg-node__lines">
           <span className="dg-node__title">{data.label}</span>
           <span className="dg-node__attr">{data.detail ?? data.meta}</span>
         </span>
         {data.tag && <span className="dg-node__metric">{data.tag}</span>}
-        <span className="dg-node__type">{data.type ?? data.kind}</span>
+        <span className="dg-node__type">{brand?.title ?? data.type ?? data.kind}</span>
       </div>
       {rows.length > 0 && (
         <ul className="component__rows">
