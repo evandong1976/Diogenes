@@ -14,12 +14,21 @@ export type { SourceReader, VerificationSource } from './tools'
 export const DESIGN_MODELS = ['gemini-4-carbon', 'gemini-4-hydrogen'] as const
 
 /** Reads files at the exact commit through the signed-in GitHub session. */
-export const githubSourceReader: SourceReader = async (repository, commitSha, path) => {
-  try {
-    return await getFileText(repository.fullName, commitSha, path)
-  } catch {
-    return null
+// Files at a commit never change, so a read is fetched from GitHub once per app session.
+// ponytail: unbounded in-memory map; cap it (LRU) if sessions start reading thousands of files.
+const sourceCache = new Map<string, Promise<string | null>>()
+
+export const githubSourceReader: SourceReader = (repository, commitSha, path) => {
+  const key = `${repository.fullName}@${commitSha}:${path}`
+  let file = sourceCache.get(key)
+  if (!file) {
+    file = getFileText(repository.fullName, commitSha, path).catch(() => {
+      sourceCache.delete(key) // a failed fetch (rate limit, offline) is retried next time
+      return null
+    })
+    sourceCache.set(key, file)
   }
+  return file
 }
 
 /**

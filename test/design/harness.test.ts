@@ -70,8 +70,10 @@ const insertAudit = (evidenceIds: string[]): Record<string, unknown> => ({
 
 const proposeTurn = (sig = 'sig-a'): Step[] => [
   () => [call('inspect_component', { componentId: 'submit' }, sig), call('read_source', { entityId: 'submit' })],
-  (r) => [call('propose_graph_edit', insertAudit([lastEvidence(r)]), 'sig-b')],
-  () => [{ text: 'I propose inserting an audit step on submit → charge.' }]
+  (r) => [
+    { text: 'I propose inserting an audit step on submit → charge.' },
+    call('propose_graph_edit', insertAudit([lastEvidence(r)]), 'sig-b')
+  ]
 ]
 
 describe('DesignService', () => {
@@ -126,7 +128,9 @@ describe('DesignService', () => {
     // The selection reached the model, and its thought signatures came back verbatim within the turn.
     expect(model.requests[0].contents.at(-1)!.parts[0].text).toContain('Selected component: submit')
     expect(model.requests[1].contents.flatMap((c) => c.parts).find((p) => p.functionCall)?.thoughtSignature).toBe('sig-a')
-    expect(model.requests[2].toolMode).toBe('NONE')
+    // The proposal ends the turn: no extra model call just to explain it.
+    expect(model.requests).toHaveLength(2)
+    expect(t.reply).toBe('I propose inserting an audit step on submit → charge.')
 
     let state = await service.getProject('refunds')
     const proposal = state.proposals[0]

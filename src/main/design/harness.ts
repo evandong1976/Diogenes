@@ -47,8 +47,10 @@ Work like this:
   the context with its notes. Requests about whiteboard boxes or notes, such as
   'On "Supabase Postgres" (files …): use Firebase instead', are answered with
   propose_whiteboard_edit: replace, rename, add or remove boxes and re-point their arrows so the
-  whiteboard shows the change. Identify boxes by their whiteboard IDs; read_box_file grounds you in
-  their code. Don't ask for a catalog selection for a whiteboard request.
+  whiteboard shows the change. Identify boxes by their whiteboard IDs. Be fast: the whiteboard in
+  the context is enough to propose most edits, so call propose_whiteboard_edit first. Read a box's
+  file with read_box_file only when the change depends on code the whiteboard doesn't show, and
+  then read at most one or two. Don't ask for a catalog selection for a whiteboard request.
 - For catalog work, if no component is selected and the conversation does not make clear which one
   the developer means, ask which component they mean. Never guess a target. If a selection is
   reported missing, say so.
@@ -230,7 +232,6 @@ export class DesignService {
     }
     const maxSteps = this.opts.limits?.modelSteps ?? 8
     const maxCalls = this.opts.limits?.toolCalls ?? 16
-    let explain = false
     for (let step = 0; step < maxSteps; step++) {
       signal.throwIfAborted()
       const response = await this.opts.model.generate({
@@ -238,20 +239,21 @@ export class DesignService {
         system,
         contents,
         tools: toolDeclarations,
-        toolMode: explain ? 'NONE' : 'AUTO',
+        toolMode: 'AUTO',
         signal
       })
       signal.throwIfAborted()
       // Keep the model's parts verbatim (including thought signatures) for the rest of this turn.
       contents.push({ role: 'model', parts: response.parts })
       const calls = response.parts.filter((p) => p.functionCall)
-      if (!calls.length || explain) {
-        turn.reply = response.parts
-          .filter((p) => p.text && !p.thought)
-          .map((p) => p.text)
-          .join('')
-          .trim()
-        turn.status = turn.proposalId ? 'awaiting-approval' : 'completed'
+      const reply = response.parts
+        .filter((p) => p.text && !p.thought)
+        .map((p) => p.text)
+        .join('')
+        .trim()
+      if (!calls.length) {
+        turn.reply = reply
+        turn.status = 'completed'
         return
       }
 
@@ -287,13 +289,18 @@ export class DesignService {
           await this.opts.store.update(projectId, (s) => {
             s.proposals.push(proposal)
           })
-          explain = true
+          // The change is the answer: end the turn now instead of spending a model call explaining it.
+          turn.reply = reply || `I've put the change on the canvas. ${proposal.summary}`
+          turn.status = 'awaiting-approval'
+          return
         }
         if ('whiteboard' in outcome) {
           // Accepted or rejected on the canvas; the turn ends with the agent's explanation.
           turn.whiteboardEdit = outcome.whiteboard
           turn.whiteboardBase = whiteboard
-          explain = true
+          turn.reply = reply || `I've put the change on your whiteboard. ${outcome.whiteboard.summary}`
+          turn.status = 'completed'
+          return
         }
         if ('correction' in outcome) {
           const correction = {
@@ -314,9 +321,8 @@ export class DesignService {
       contents.push({ role: 'user', parts: responses })
       await this.saveTurn(turn)
     }
-    turn.status = turn.proposalId ? 'awaiting-approval' : turn.whiteboardEdit ? 'completed' : 'failed'
-    if (!turn.proposalId && !turn.whiteboardEdit)
-      turn.error = `Stopped after ${maxSteps} model steps without an answer.`
+    turn.status = 'failed'
+    turn.error = `Stopped after ${maxSteps} model steps without an answer.`
   }
 
   /** Selection is context for this turn, resolved against the draft the client supplied. */
