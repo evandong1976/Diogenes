@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { GithubRepo } from '../../preload'
 import type { SoftwareGraph } from '../../shared/indexing'
 import { DRAG_FILE, LEVELS } from './canvas/components'
+import type { DesignChat } from './agent/useDesignChat'
 
 interface Props {
   repo: GithubRepo | null
@@ -20,6 +21,10 @@ interface Props {
   fileCounts: Map<string, number>
   focusFile: string | null
   onFocusFile(path: string | null): void
+  /** The project's design chat; null in example mode, which has no backend project. */
+  chat: DesignChat | null
+  chatOpen: boolean
+  onChatOpen(open: boolean): void
 }
 
 export function Sidebar(props: Props): React.JSX.Element {
@@ -63,6 +68,10 @@ export function Sidebar(props: Props): React.JSX.Element {
           )}
         </ul>
       </section>
+
+      {props.chat && (
+        <ChatSection chat={props.chat} open={props.chatOpen} onOpen={props.onChatOpen} />
+      )}
 
       <section className="sidebar__section sidebar__files">
         <h2 className="dg-label sidebar__head">
@@ -141,6 +150,72 @@ function RepoSection({
           </button>
         </li>
       </ul>
+    </section>
+  )
+}
+
+/** Design threads: create, switch and reopen. Opening one also shows the chat pane. */
+function ChatSection({
+  chat,
+  open,
+  onOpen
+}: {
+  chat: DesignChat
+  open: boolean
+  onOpen(open: boolean): void
+}): React.JSX.Element {
+  const ready = chat.load.status === 'ready'
+  return (
+    <section className="sidebar__section sidebar__threads">
+      <h2 className="dg-label sidebar__head">
+        Design chat
+        <button className="link-x" onClick={() => onOpen(!open)} aria-pressed={open}>
+          {open ? 'Hide' : 'Show'}
+        </button>
+      </h2>
+      <ul>
+        {chat.threads.map((t) => (
+          <li key={t.id}>
+            <button
+              className="sidebar__row"
+              aria-current={open && chat.activeId === t.id ? 'true' : undefined}
+              title={`${t.title}\nUpdated ${new Date(t.updatedAt).toLocaleString()}`}
+              onClick={() => {
+                chat.openThread(t.id)
+                onOpen(true)
+              }}
+            >
+              <span className="sidebar__name">{t.title}</span>
+              {chat.pending?.threadId === t.id ? (
+                <span className="dg-data">…</span>
+              ) : (
+                t.lastSeq > 0 && <span className="dg-data">{t.lastSeq}</span>
+              )}
+            </button>
+          </li>
+        ))}
+        <li>
+          <button
+            className="sidebar__row sidebar__row--quiet"
+            disabled={!ready || !!chat.pending}
+            onClick={() => {
+              void chat.newThread()
+              onOpen(true)
+            }}
+          >
+            + New design thread
+          </button>
+        </li>
+      </ul>
+      {!ready && chat.load.status !== 'off' && (
+        <p className="dg-data sidebar__note">
+          {chat.load.status === 'loading'
+            ? 'Opening draft…'
+            : chat.load.status === 'waiting'
+              ? 'Waiting for the index'
+              : 'Backend unavailable'}
+        </p>
+      )}
     </section>
   )
 }

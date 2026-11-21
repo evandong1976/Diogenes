@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
   Controls,
   Handle,
@@ -27,7 +27,8 @@ import {
   middleTruncate,
   newComponent,
   outProtocol,
-  useWorkspace
+  useWorkspace,
+  type ComponentSelection
 } from './components'
 import type { CatalogProtocol } from '../../../shared/catalog'
 
@@ -177,10 +178,27 @@ interface Props {
   canvasRef?: React.Ref<HTMLDivElement>
   /** Drawn above the diagram, inside the captured area. */
   overlay?: React.ReactNode
+  /**
+   * The catalog component a selected node stands for. Defaults to the node itself when its ID is
+   * a catalog ID; return null for nodes that aren't catalog components.
+   */
+  componentFor?(node: DiagramNode): ComponentSelection | null
 }
 
-export function DiagramCanvas({ diagram, viewKey, canvasRef, overlay }: Props): React.JSX.Element {
-  const { draft, setDraft, focusFile, levelTag } = useWorkspace()
+/** Nodes the user drafted or that summarize packages have no catalog ID. */
+const catalogSelection = (node: DiagramNode): ComponentSelection | null =>
+  isDraft(node.id) || node.id.startsWith('package:')
+    ? null
+    : { componentId: node.id, label: node.label }
+
+export function DiagramCanvas({
+  diagram,
+  viewKey,
+  canvasRef,
+  overlay,
+  componentFor = catalogSelection
+}: Props): React.JSX.Element {
+  const { draft, setDraft, focusFile, levelTag, onSelectComponent } = useWorkspace()
   const [selectedId, setSelectedId] = useState<{ kind: 'node' | 'edge'; id: string } | null>(null)
   const [rf, setRf] = useState<ReactFlowInstance<ComponentNode> | null>(null)
   // Positions while a drag is in progress; committed to the draft when it ends.
@@ -382,6 +400,17 @@ export function DiagramCanvas({ diagram, viewKey, canvasRef, overlay }: Props): 
     }
     return undefined
   }, [merged, selectedId])
+
+  // Tell the workspace which catalog component is selected, so the design chat can attach it.
+  const selectedNode = selected?.kind === 'node' ? selected.item : null
+  const component = selectedNode ? componentFor(selectedNode) : null
+  const componentKey = component ? `${component.componentId}\0${component.label}` : ''
+  useEffect(() => {
+    onSelectComponent(component)
+    // Keyed on the selection's identity, not the object, so redraws don't re-report it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [componentKey])
+  useEffect(() => () => onSelectComponent(null), [onSelectComponent])
 
   const empty = merged.nodes.length === 0
 

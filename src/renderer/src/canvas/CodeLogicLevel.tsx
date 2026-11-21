@@ -114,7 +114,8 @@ export function CodeLogicLevel({
     replaceLogic({
       graph: stateGraphFromCatalog(machine),
       source: `Index · ${machine.name}`,
-      isExample: false
+      isExample: false,
+      machine: { id: machine.id, name: machine.name }
     })
   }
 
@@ -167,6 +168,7 @@ export function CodeLogicLevel({
       graph: applyEdit(logic.graph, proposal),
       source: logic.source.endsWith('· edited') ? logic.source : `${logic.source} · edited`,
       isExample: logic.isExample,
+      machine: logic.machine,
       approved,
       version: logic.version + 1,
       autoBuiltFor: logic.autoBuiltFor
@@ -365,6 +367,10 @@ export function CodeLogicLevel({
         viewKey={`${logic.version}-${proposal ? 'preview' : 'current'}`}
         canvasRef={canvasRef}
         overlay={<DrawLayer active={drawing} clearKey={clearKey} onInkChange={setHasInk} />}
+        // States here are slugs of one machine; any of them stands for the catalog machine.
+        componentFor={() =>
+          logic.machine ? { componentId: logic.machine.id, label: logic.machine.name } : null
+        }
       />
     </div>
   )

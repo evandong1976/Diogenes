@@ -16,6 +16,8 @@ export interface LogicState {
   /** Where the graph came from, shown in the toolbar. */
   source: string
   isExample: boolean
+  /** The indexed catalog state machine the graph was loaded from, so chat can name it. */
+  machine?: { id: string; name: string }
   /**
    * Edits approved since the graph was loaded, for the managed agent: `graph` is the graph before
    * the first of them, and `repo` is set when the graph came from a repo rather than the example.
