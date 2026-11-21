@@ -169,6 +169,8 @@ function registerHandlers(call: Call): void {
       backend.workflow.resolveDecision(p, h, o as never),
     [c.workflowVerdicts]: (backend: AgentBackend, p: string, h: string) =>
       backend.workflow.verdicts(p, h),
+    [c.workflowVerifiedPatch]: (backend: AgentBackend, p: string, h: string) =>
+      backend.workflow.verifiedPatch(p, h),
     [c.codingList]: (backend: AgentBackend, p: string) => backend.coding.list(p),
     [c.codingStatus]: (backend: AgentBackend, p: string, r: string) => backend.coding.status(p, r),
     [c.codingRetry]: (backend: AgentBackend, p: string, r: string) => backend.coding.retry(p, r),

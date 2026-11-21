@@ -206,12 +206,34 @@ function nodeIdsOf(op: CatalogOperation): string[] {
   }
 }
 
-/** True when `next` differs from `prior` only in the contract IDs of its ports. */
+/**
+ * True when `next` differs from `prior` only in the contract IDs of its ports. Indexer evidence
+ * (sources, resolution) and key order are not design, so they do not count as a change.
+ */
 function contractsOnly(prior: CatalogNode | undefined, next: CatalogNode): boolean {
   if (!prior) return false
-  const strip = (n: CatalogNode): string =>
-    JSON.stringify({ ...n, ports: n.ports.map((p) => ({ ...p, contractId: undefined })) })
-  return strip(prior) === strip(next)
+  const designed = (n: CatalogNode): string =>
+    canonical({
+      kind: n.kind,
+      name: n.name,
+      properties: n.properties,
+      ports: [...n.ports]
+        .map((port) => ({ ...port, contractId: undefined }))
+        .sort((a, b) => a.id.localeCompare(b.id))
+    })
+  return designed(prior) === designed(next)
+}
+
+/** JSON with object keys sorted, so equal values compare equal however they were written. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
+  if (value && typeof value === 'object')
+    return `{${Object.entries(value)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`)
+      .join(',')}}`
+  return JSON.stringify(value)
 }
 
 function nodeChange(op: CatalogOperation, name: (id: string) => string): string | null {

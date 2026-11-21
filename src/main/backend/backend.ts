@@ -222,7 +222,9 @@ export class AgentBackend implements BackendApi {
         w.requestCorrection(await this.handoffIn(projectId, handoffId), request),
       resolveDecision: async (projectId, handoffId, option: DecisionOption) =>
         w.resolveDecision(await this.handoffIn(projectId, handoffId), option),
-      verdicts: (projectId, handoffId) => this.verdicts(projectId, handoffId)
+      verdicts: (projectId, handoffId) => this.verdicts(projectId, handoffId),
+      verifiedPatch: async (projectId, handoffId) =>
+        w.verifiedPatch(await this.handoffIn(projectId, handoffId))
     }
 
     this.coding = {

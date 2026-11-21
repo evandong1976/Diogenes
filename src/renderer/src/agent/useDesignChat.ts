@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DesignApproval } from '../../../shared/backend'
 import type { DraftState, Proposal, ProjectState } from '../../../shared/design'
 import type { ThreadEvent, ThreadSummary } from '../../../shared/threads'
-import type { ApprovalRecord } from '../../../shared/workflow'
+import type { ApprovalRecord, HandoffRecord, VerifiedPatch } from '../../../shared/workflow'
 import { runningTurn, turnInput, type SelectionCheck } from './chat'
 
 /** Where the project's design backend stands. Every state is shown as-is in the chat pane. */
@@ -35,6 +35,13 @@ const sortThreads = (list: ThreadSummary[]): ThreadSummary[] =>
   [...list].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 const WAITING = 'The design draft opens from the indexed catalog. Waiting for indexing to finish.'
 const POLL_MS = 1500
+const HANDOFF_POLL_MS = 3000
+
+function updateHandoff(list: HandoffRecord[], next: HandoffRecord): HandoffRecord[] {
+  const previous = list.find((h) => h.handoffId === next.handoffId)
+  if (previous && previous.updatedAt > next.updatedAt) return list
+  return previous ? list.map((h) => (h.handoffId === next.handoffId ? next : h)) : [...list, next]
+}
 
 export interface DesignChat {
   load: ProjectLoad
@@ -50,6 +57,8 @@ export interface DesignChat {
   approvals: Record<string, ApprovalOutcome>
   /** Frozen approvals from the workflow, so a reopened project still shows them. */
   frozen: ApprovalRecord[]
+  handoffs: HandoffRecord[]
+  codingBusy: string | null
   deciding: string | null
   reload(): void
   openThread(id: string): void
@@ -58,6 +67,10 @@ export interface DesignChat {
   cancel(): void
   approve(proposal: Proposal): Promise<void>
   discard(proposal: Proposal): Promise<void>
+  startHandoff(approvalId: string): Promise<void>
+  cancelHandoff(handoff: HandoffRecord): Promise<void>
+  /** The exact candidate that passed local verification, as a patch for the developer's repo. */
+  verifiedPatch(handoff: HandoffRecord): Promise<VerifiedPatch>
   dismissError(): void
 }
 
@@ -77,6 +90,9 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
   const [error, setError] = useState<string | null>(null)
   const [approvals, setApprovals] = useState<Record<string, ApprovalOutcome>>({})
   const [frozen, setFrozen] = useState<ApprovalRecord[]>([])
+  const [handoffs, setHandoffs] = useState<HandoffRecord[]>([])
+  const [codingBusy, setCodingBusy] = useState<string | null>(null)
+  const codingAction = useRef<string | null>(null)
   const [deciding, setDeciding] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
   // Drops results that arrive after the project or thread changed.
@@ -99,6 +115,8 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
     setError(null)
     setApprovals({})
     setFrozen([])
+    setHandoffs([])
+    setCodingBusy(null)
   }
   // Switching threads clears the old transcript until the new one loads.
   const threadKey = projectId && activeId ? `${projectId}/${activeId}` : null
@@ -117,7 +135,11 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
   const refreshWorkflow = useCallback(
     (p: string) =>
       api.workflow.getProject(p).then(
-        (w) => scope.current.projectId === p && setFrozen(w.approvals),
+        (w) => {
+          if (scope.current.projectId !== p) return
+          setFrozen(w.approvals)
+          setHandoffs((current) => w.handoffs.reduce(updateHandoff, current))
+        },
         // Approvals are extra context here; the design chat works without them.
         () => {}
       ),
@@ -184,6 +206,39 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
     return () => clearInterval(timer)
   }, [sending, refresh])
 
+  // Refresh drives collection and local verification. Resuming the app also resumes this loop.
+  useEffect(() => {
+    if (!projectId) return
+    const active = handoffs.filter((h) => h.stage === 'coding' || h.stage === 'verifying')
+    if (!active.length) return
+    let live = true
+    let timer: ReturnType<typeof setTimeout>
+    const poll = async (): Promise<void> => {
+      const results = await Promise.allSettled(
+        active.map((h) => api.workflow.refresh(projectId, h.handoffId))
+      )
+      if (!live) return
+      const updated = results.flatMap((result) =>
+        result.status === 'fulfilled' ? [result.value] : []
+      )
+      if (updated.length) {
+        setHandoffs((current) => updated.reduce(updateHandoff, current))
+        if (updated.some((h) => h.stage !== 'coding' && h.stage !== 'verifying'))
+          void refresh().catch((e) => live && setError(message(e)))
+      } else {
+        const failure = results[0]
+        if (failure.status === 'rejected')
+          setError(`Could not refresh coding: ${message(failure.reason)}`)
+        timer = setTimeout(() => void poll(), HANDOFF_POLL_MS)
+      }
+    }
+    timer = setTimeout(() => void poll(), HANDOFF_POLL_MS)
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
+  }, [api, projectId, handoffs, refresh])
+
   const guard = async (task: () => Promise<void>): Promise<void> => {
     setError(null)
     try {
@@ -206,6 +261,28 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
     return thread
   }
 
+  const runCodingAction = async (
+    approvalId: string,
+    action: (project: string) => Promise<HandoffRecord>
+  ): Promise<void> => {
+    if (!projectId || codingAction.current) return
+    codingAction.current = projectId
+    setCodingBusy(approvalId)
+    setError(null)
+    try {
+      const result = await action(projectId)
+      if (scope.current.projectId === projectId) {
+        setHandoffs((current) => updateHandoff(current, result))
+        await refresh()
+      }
+    } catch (e) {
+      if (scope.current.projectId === projectId) setError(message(e))
+    } finally {
+      codingAction.current = null
+      setCodingBusy(null)
+    }
+  }
+
   const draft = project?.draft ?? null
 
   return {
@@ -220,6 +297,8 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
     error,
     approvals,
     frozen,
+    handoffs,
+    codingBusy,
     deciding,
     reload: () => setAttempt((n) => n + 1),
     openThread: (id) => {
@@ -246,6 +325,10 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
           turnInput({ projectId, threadId, model, draft, message: text, selection })
         )
         setSent((s) => ({ ...s, [result.turn.id]: text.trim() }))
+        if (result.handoff && scope.current.projectId === projectId) {
+          const handoff = result.handoff
+          setHandoffs((current) => updateHandoff(current, handoff))
+        }
         if (result.correctionError) setError(`Correction not forwarded: ${result.correctionError}`)
         return true
       } catch (e) {
@@ -311,6 +394,12 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
           setDeciding(null)
         }
       }),
+    startHandoff: (approvalId) =>
+      runCodingAction(approvalId, (p) => api.workflow.startHandoff(p, approvalId)),
+    cancelHandoff: (handoff) =>
+      runCodingAction(handoff.approvalId, (p) => api.workflow.cancel(p, handoff.handoffId)),
+    verifiedPatch: (handoff) =>
+      api.workflow.verifiedPatch(handoff.correlation.projectId, handoff.handoffId),
     dismissError: () => setError(null)
   }
 }

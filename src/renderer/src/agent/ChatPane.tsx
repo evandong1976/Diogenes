@@ -8,7 +8,7 @@ import {
   useState
 } from 'react'
 import type { DraftState, EvidenceRecord, Proposal, TurnRecord } from '../../../shared/design'
-import type { ApprovalRecord } from '../../../shared/workflow'
+import type { HandoffRecord, HandoffStage, Outcome } from '../../../shared/workflow'
 import {
   DESIGN_MODELS,
   activityTrace,
@@ -84,7 +84,7 @@ export function ChatPane({ chat, selected, hidden, onOpenSource }: Props): React
     const log = logRef.current
     if (hidden || !log || !pinned.current) return
     log.scrollTop = log.scrollHeight
-  }, [hidden, activeId, items.length, pendingHere, live?.toolCalls.length])
+  }, [hidden, activeId, items.length, pendingHere, live?.toolCalls.length, chat.handoffs])
 
   const onScroll = (): void => {
     const log = logRef.current
@@ -148,7 +148,7 @@ export function ChatPane({ chat, selected, hidden, onOpenSource }: Props): React
                 {item.text}
               </li>
             ) : pendingHere && item.turn?.status === 'running' ? null : (
-              <Turn key={item.key} item={item} chat={chat} draft={draft} />
+              <Turn key={item.key} item={item} chat={chat} draft={draft} model={model} />
             )
           )}
           {pendingHere && (
@@ -325,11 +325,13 @@ const STATUS_NOTE: Partial<Record<TurnRecord['status'], string>> = {
 function Turn({
   item,
   chat,
-  draft
+  draft,
+  model
 }: {
   item: TurnItem
   chat: DesignChat
   draft: DraftState | null
+  model: string
 }): React.JSX.Element {
   const { turn } = item
   // The thread's assistant event repeats the error when there was no reply; show it once.
@@ -361,7 +363,9 @@ function Turn({
             {note}
           </p>
         )}
-        {item.proposal && <ProposalCard proposal={item.proposal} chat={chat} draft={draft} />}
+        {item.proposal && (
+          <ProposalCard proposal={item.proposal} chat={chat} draft={draft} model={model} />
+        )}
       </div>
     </li>
   )
@@ -443,11 +447,13 @@ const PROPOSAL_STATUS = {
 function ProposalCard({
   proposal,
   chat,
-  draft
+  draft,
+  model
 }: {
   proposal: Proposal
   chat: DesignChat
   draft: DraftState | null
+  model: string
 }): React.JSX.Element {
   const { preview } = proposal
   const behind = proposalIsBehind(proposal, draft)
@@ -511,7 +517,7 @@ function ProposalCard({
       {proposal.reason && proposal.status !== 'pending' && (
         <p className="chat__muted">{proposal.reason}</p>
       )}
-      <ApprovalState proposal={proposal} outcome={outcome} frozen={chat.frozen} />
+      <ApprovalState proposal={proposal} outcome={outcome} chat={chat} model={model} />
       {proposal.status === 'pending' && (
         <div className="chat__actions">
           <button
@@ -541,11 +547,13 @@ function ProposalCard({
 function ApprovalState({
   proposal,
   outcome,
-  frozen
+  chat,
+  model
 }: {
   proposal: Proposal
   outcome: ApprovalOutcome | undefined
-  frozen: ApprovalRecord[]
+  chat: DesignChat
+  model: string
 }): React.JSX.Element | null {
   if (outcome?.kind === 'refused')
     return (
@@ -561,7 +569,7 @@ function ApprovalState({
       </div>
     )
   if (proposal.status !== 'approved') return null
-  const record = frozen.find((a) => a.correlation.proposalId === proposal.id)
+  const record = chat.frozen.find((a) => a.correlation.proposalId === proposal.id)
   if (outcome?.kind === 'draft-only' && !record)
     return (
       <p className="chat__status" data-tone="warn">
@@ -569,10 +577,179 @@ function ApprovalState({
       </p>
     )
   const id = record?.approvalId ?? (outcome?.kind === 'frozen' ? outcome.approvalId : null)
+  if (id)
+    return <CodingHandoff approvalId={id} proposalId={proposal.id} chat={chat} model={model} />
   return (
-    <p className="chat__status" data-tone="ok">
-      Applied to the draft
-      {id ? ` · frozen for coding as ${id.slice(0, 12)}` : ' · no coding handoff recorded'}
+    <p className="chat__status" data-tone="warn">
+      Applied to the draft · no coding handoff recorded
     </p>
+  )
+}
+
+const CODING_STAGE: Record<HandoffStage, string> = {
+  coding: 'Coding agent working…',
+  verifying: 'Checking the candidate locally…',
+  accepted: 'Local verification passed',
+  correctable: 'Local verification failed',
+  'needs-decision': 'Needs review',
+  closed: 'Run closed'
+}
+
+const CHECK_LABEL: Record<Outcome, string> = { pass: 'Passed', fail: 'Failed', unknown: 'Unknown' }
+
+function CodingHandoff({
+  approvalId,
+  proposalId,
+  chat,
+  model
+}: {
+  approvalId: string
+  proposalId: string
+  chat: DesignChat
+  model: string
+}): React.JSX.Element {
+  const handoff = chat.handoffs.findLast((h) => h.approvalId === approvalId)
+  const busy = chat.codingBusy === approvalId
+  if (!handoff)
+    return (
+      <div className="chat__actions">
+        <button
+          type="button"
+          className="dg-btn dg-btn--primary"
+          disabled={!!chat.codingBusy}
+          onClick={() => void chat.startHandoff(approvalId)}
+        >
+          {busy ? 'Starting…' : 'Send to coding agent'}
+        </button>
+      </div>
+    )
+
+  const { stage } = handoff
+  const run = handoff.runs.at(-1)
+  const verdict = run?.verdict
+  const events = run?.run.events ?? []
+  const intent = chat.project?.intents.find((i) => i.proposalId === proposalId)
+  return (
+    <>
+      <p
+        className="chat__status"
+        role="status"
+        data-tone={stage === 'accepted' ? 'ok' : verdict?.overall === 'fail' ? 'danger' : 'info'}
+      >
+        {CODING_STAGE[stage]}
+        {run?.candidate && ` · ${run.candidate.candidateId.slice(0, 8)}`}
+      </p>
+      {events.length > 0 && (
+        <details className="chat__activity">
+          <summary>
+            <span className="chat__activity-head">Coding activity · {events.length}</span>
+          </summary>
+          <div className="chat__activity-body">
+            <ol className="chat__trace">
+              {events.map((e, index) => (
+                <li key={`${e.at}-${index}`} data-ok={e.kind !== 'error'}>
+                  <span className="chat__tool">{e.kind}</span>
+                  <span>{e.text}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </details>
+      )}
+      {verdict && (
+        <ul className="chat-proposal__changes" aria-label="Local verification checks">
+          {verdict.obligations.map((check) => (
+            <li key={check.id} title={check.diagnostic ?? check.scope}>
+              {check.id} · {CHECK_LABEL[check.outcome]}
+            </li>
+          ))}
+        </ul>
+      )}
+      {handoff.decision && (
+        <p className="chat__status" data-tone="warn">
+          {handoff.decision.detail}
+        </p>
+      )}
+      {stage === 'accepted' && <VerifiedPatchActions handoff={handoff} chat={chat} />}
+      {stage === 'coding' && (
+        <div className="chat__actions">
+          <button
+            type="button"
+            className="dg-btn"
+            disabled={!!chat.codingBusy}
+            onClick={() => void chat.cancelHandoff(handoff)}
+          >
+            {busy ? 'Stopping…' : 'Stop coding'}
+          </button>
+        </div>
+      )}
+      {stage === 'correctable' && intent && (
+        <div className="chat__actions">
+          <button
+            type="button"
+            className="dg-btn"
+            disabled={!!chat.pending || !!chat.codingBusy}
+            onClick={() =>
+              void chat.send(
+                `Read the local verification for approved intent ${intent.id} and request a correction for its failing checks, preserving the approved design.`,
+                model,
+                { status: 'none' }
+              )
+            }
+          >
+            Ask design agent to correct
+          </button>
+        </div>
+      )}
+    </>
+  )
+}
+
+/** Hands the developer the exact candidate commit that passed, to apply with `git am`. */
+function VerifiedPatchActions({
+  handoff,
+  chat
+}: {
+  handoff: HandoffRecord
+  chat: DesignChat
+}): React.JSX.Element {
+  const [note, setNote] = useState<{ text: string; tone: 'ok' | 'danger' } | null>(null)
+  const take = async (how: 'copy' | 'save'): Promise<void> => {
+    try {
+      const verified = await chat.verifiedPatch(handoff)
+      const name = `diogenes-${verified.candidateId.slice(0, 8)}.patch`
+      if (how === 'copy') await navigator.clipboard.writeText(verified.patch)
+      else {
+        const url = URL.createObjectURL(new Blob([verified.patch], { type: 'text/x-patch' }))
+        const link = document.createElement('a')
+        link.href = url
+        link.download = name
+        link.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+      }
+      setNote({
+        text: `${how === 'copy' ? 'Copied' : 'Saved'} ${name} · ${[...verified.files, ...verified.deleted].join(', ')} on ${verified.baseCommit.slice(0, 7)}. Apply it with git am.`,
+        tone: 'ok'
+      })
+    } catch (e) {
+      setNote({ text: `Could not get the verified patch: ${(e as Error).message}`, tone: 'danger' })
+    }
+  }
+  return (
+    <>
+      <div className="chat__actions">
+        <button type="button" className="dg-btn dg-btn--primary" onClick={() => void take('save')}>
+          Save verified patch
+        </button>
+        <button type="button" className="dg-btn" onClick={() => void take('copy')}>
+          Copy patch
+        </button>
+      </div>
+      {note && (
+        <p className="chat__status" role="status" data-tone={note.tone}>
+          {note.text}
+        </p>
+      )}
+    </>
   )
 }

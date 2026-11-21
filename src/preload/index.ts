@@ -89,7 +89,8 @@ const backend: BackendApi = {
       invoke(b.workflowRequestCorrection, projectId, handoffId, request),
     resolveDecision: (projectId, handoffId, option) =>
       invoke(b.workflowResolveDecision, projectId, handoffId, option),
-    verdicts: (projectId, handoffId) => invoke(b.workflowVerdicts, projectId, handoffId)
+    verdicts: (projectId, handoffId) => invoke(b.workflowVerdicts, projectId, handoffId),
+    verifiedPatch: (projectId, handoffId) => invoke(b.workflowVerifiedPatch, projectId, handoffId)
   },
   coding: {
     list: (projectId) => invoke(b.codingList, projectId),

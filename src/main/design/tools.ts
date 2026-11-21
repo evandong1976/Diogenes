@@ -425,7 +425,7 @@ function propose(ctx: ToolContext, args: Record<string, unknown>): ToolOutcome {
     repositoryId: ctx.graph.repository.id,
     commitSha: ctx.graph.commit.sha,
     baseRevision: ctx.graph.revision,
-    operations: args.operations.map((op, i) => operation(op, i))
+    operations: args.operations.map((op, i) => operation(op, i, ctx.graph))
   }
   const result = applyCatalogPatch(ctx.graph, patch)
   if (!result.ok) {
@@ -451,8 +451,12 @@ function propose(ctx: ToolContext, args: Record<string, unknown>): ToolOutcome {
   }
 }
 
-/** Shapes model arguments into a CatalogOperation. Semantics are left to the graph editor. */
-function operation(value: unknown, index: number): CatalogOperation {
+/**
+ * Shapes model arguments into a CatalogOperation. Semantics are left to the graph editor.
+ * An update keeps whatever fields the model left out, so restating a node to declare a port
+ * contract does not drop its indexed sources or resolution.
+ */
+function operation(value: unknown, index: number, graph: CatalogGraph): CatalogOperation {
   const op = value as Record<string, unknown> | null
   const at = `operations[${index}]`
   if (!op || typeof op !== 'object') throw new ArgumentError(`${at} must be an object.`)
@@ -462,23 +466,26 @@ function operation(value: unknown, index: number): CatalogOperation {
       throw new ArgumentError(`${at}.${field} needs id, kind, from and to.`)
     return { id: e.id!, kind: e.kind!, from: e.from, to: e.to, sources: e.sources ?? [] }
   }
-  const catalogNode = (v: unknown): CatalogNode => {
+  const catalogNode = (v: unknown, prior?: CatalogNode): CatalogNode => {
     const n = v as Partial<CatalogNode> | null
     if (!n || typeof n !== 'object') throw new ArgumentError(`${at}.node must be an object.`)
     return {
       id: n.id!,
-      kind: n.kind!,
-      name: n.name!,
-      resolution: n.resolution ?? 'proposed',
-      properties: n.properties ?? {},
-      ports: Array.isArray(n.ports) ? n.ports : [],
-      sources: Array.isArray(n.sources) ? n.sources : []
+      kind: n.kind ?? prior?.kind,
+      name: n.name ?? prior?.name,
+      resolution: n.resolution ?? prior?.resolution ?? 'proposed',
+      properties: n.properties ?? prior?.properties ?? {},
+      ports: Array.isArray(n.ports) ? n.ports : (prior?.ports ?? []),
+      sources: Array.isArray(n.sources) ? n.sources : (prior?.sources ?? [])
     } as CatalogNode
   }
   switch (op.type) {
     case 'create':
-    case 'update':
       return { type: op.type, node: catalogNode(op.node) }
+    case 'update': {
+      const id = (op.node as { id?: unknown } | null)?.id
+      return { type: op.type, node: catalogNode(op.node, graph.nodes.find((n) => n.id === id)) }
+    }
     case 'connect':
     case 'rewire':
       return { type: op.type, edge: edge(op.edge, 'edge') }
