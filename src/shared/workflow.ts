@@ -348,6 +348,19 @@ export interface HandoffRecord {
   updatedAt: string
 }
 
+/** The exact candidate commit that passed local verification, ready for the developer's repo. */
+export interface VerifiedPatch {
+  handoffId: string
+  approvalId: string
+  candidateId: string
+  baseCommit: string
+  files: string[]
+  deleted: string[]
+  verifiedAt: string
+  /** `git format-patch` of the candidate commit; `git am` applies it on `baseCommit`. */
+  patch: string
+}
+
 export interface ProjectWorkflowState {
   projectId: string
   approvals: ApprovalRecord[]
@@ -377,4 +390,6 @@ export interface WorkflowApi {
   resolveDecision(handoffId: string, option: DecisionOption): Promise<HandoffRecord>
   getHandoff(handoffId: string): Promise<HandoffRecord | null>
   getProject(projectId: string): Promise<ProjectWorkflowState>
+  /** The newest candidate of the handoff whose local verdict passed. */
+  verifiedPatch(handoffId: string): Promise<VerifiedPatch>
 }

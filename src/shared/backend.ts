@@ -23,7 +23,8 @@ import type {
   DecisionOption,
   HandoffRecord,
   ProjectWorkflowState,
-  Verdict
+  Verdict,
+  VerifiedPatch
 } from './workflow'
 
 export interface BackendStatus {
@@ -96,6 +97,8 @@ export interface BackendApi {
     ): Promise<HandoffRecord>
     /** Every recorded verification result for a handoff, oldest first. */
     verdicts(projectId: string, handoffId: string): Promise<RecordedVerdict[]>
+    /** The newest locally verified candidate as a patch to apply to the developer's repository. */
+    verifiedPatch(projectId: string, handoffId: string): Promise<VerifiedPatch>
   }
   coding: {
     list(projectId: string): Promise<CodingRunSummary[]>
@@ -129,6 +132,7 @@ export const backendChannels = {
   workflowRequestCorrection: 'backend:workflow:requestCorrection',
   workflowResolveDecision: 'backend:workflow:resolveDecision',
   workflowVerdicts: 'backend:workflow:verdicts',
+  workflowVerifiedPatch: 'backend:workflow:verifiedPatch',
   codingList: 'backend:coding:list',
   codingStatus: 'backend:coding:status',
   codingRetry: 'backend:coding:retry',

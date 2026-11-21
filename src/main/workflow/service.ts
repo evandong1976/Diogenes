@@ -5,7 +5,7 @@
  */
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
-import { ApprovalError, freezeApproval, previewProposal } from './approval.ts'
+import { ApprovalError, freezeApproval, git, previewProposal } from './approval.ts'
 import { codingBrief, correctionBrief, steerBrief } from './brief.ts'
 import { CandidateRepo } from './candidates.ts'
 import { WorkflowStore, type WorkflowRepository } from './store.ts'
@@ -27,6 +27,7 @@ import type {
   CodingRunSnapshot,
   ThreadMessage,
   Verdict,
+  VerifiedPatch,
   WorkflowApi
 } from '../../shared/workflow'
 
@@ -262,6 +263,37 @@ export class WorkflowService implements WorkflowApi {
       projectId,
       approvals: await this.store.projectApprovals(projectId),
       handoffs: await this.store.projectHandoffs(projectId)
+    }
+  }
+
+  async verifiedPatch(handoffId: string): Promise<VerifiedPatch> {
+    const h = await this.require(handoffId)
+    const run = h.runs.findLast(
+      (r) =>
+        r.verdict?.overall === 'pass' &&
+        !r.verdict.invalid &&
+        r.verdict.candidateId === r.candidate?.candidateId
+    )
+    if (!run?.candidate || !run.verdict)
+      throw new WorkflowError(`Handoff ${handoffId} has no locally verified candidate`)
+    const { candidate, verdict } = run
+    const { packet } = (await this.store.approval(h.approvalId))!
+    return {
+      handoffId,
+      approvalId: h.approvalId,
+      candidateId: candidate.candidateId,
+      baseCommit: packet.baseCommit,
+      files: candidate.files,
+      deleted: candidate.deleted,
+      verifiedAt: verdict.verifiedAt,
+      // The verified commit itself, so what the developer applies is byte-for-byte what passed.
+      patch: git(this.candidates(h).dir, [
+        'format-patch',
+        '-1',
+        '--stdout',
+        '--no-signature',
+        candidate.candidateId
+      ])
     }
   }
 
