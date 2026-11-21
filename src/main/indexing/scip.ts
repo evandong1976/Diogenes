@@ -137,6 +137,13 @@ export async function planProjects(root: string): Promise<{ projects: string[]; 
   return found.length ? { projects: found.sort(), infer: false } : { projects: [], infer: true }
 }
 
+/** An index with no documents, for repos that have no TypeScript or JavaScript to analyze. */
+export async function writeEmptyScipIndex(path: string): Promise<void> {
+  const { create, toBinary } = await import('@bufbuild/protobuf')
+  const { IndexSchema } = await import('@scip-code/scip')
+  await writeFile(path, toBinary(IndexSchema, create(IndexSchema)))
+}
+
 /** A permissive tsconfig used when the repo's own one cannot be loaded (e.g. `extends` an uninstalled package). */
 export async function writeFallbackTsconfig(root: string): Promise<string> {
   const file = join(root, 'tsconfig.diogenes-fallback.json')
