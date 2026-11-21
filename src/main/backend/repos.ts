@@ -121,6 +121,7 @@ export async function pushBranch(input: {
   const { gitDir, url, sha, branch, authHeader } = input
   if (!SHA.test(sha)) throw new Error(`${sha} is not a full commit SHA.`)
   if (!BRANCH.test(branch)) throw new Error(`${branch} is not a Diogenes review branch.`)
+  const ref = `refs/heads/${branch}`
   const scope = input.authScope ?? 'https://github.com/'
   const env = minimalEnv(
     authHeader
@@ -134,7 +135,7 @@ export async function pushBranch(input: {
   await new Promise<void>((resolve, reject) =>
     execFile(
       'git',
-      ['push', '--quiet', '--no-verify', '--', url, `${sha}:refs/heads/${branch}`],
+      ['push', '--quiet', '--no-verify', `--force-with-lease=${ref}:`, '--', url, `${sha}:${ref}`],
       { cwd: gitDir, env, timeout: 300_000, maxBuffer: 1 << 20 },
       (error, _stdout, stderr) =>
         error ? reject(new Error(`Could not push ${branch}: ${String(stderr).trim()}`)) : resolve()

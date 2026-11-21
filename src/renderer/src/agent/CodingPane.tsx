@@ -478,7 +478,8 @@ function HandoffView({
         <details className="chat__activity">
           <summary>
             <span className="chat__activity-head">
-              Exact provider input · sha256 {brief.sha256.slice(0, 12)}
+              {brief.exact ? 'Exact provider input' : 'Reconstructed provider input'} · sha256{' '}
+              {brief.sha256.slice(0, 12)}
               {brief.sources.length > 0 && ` · ${brief.sources.length} staged files`}
             </span>
           </summary>

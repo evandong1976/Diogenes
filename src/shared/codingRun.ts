@@ -72,6 +72,8 @@ export interface CodingRunTurn {
   /** Each provider create request for this turn. More than one means it was retried on request. */
   attempts: {
     requestedAt: string
+    /** Exact provider input, persisted before dispatch. Older run records omit it. */
+    submittedInput?: string
     interactionId?: string
     error?: string
     /** Set on an explicit resend after an uncertain attempt: the earlier one may also exist. */

@@ -368,8 +368,8 @@ export interface VerifiedPatch {
 /**
  * What one attempt actually sent to the managed coding agent, read back from the persisted run
  * input and turn. `markdown` is the workflow's own brief for the attempt (`codingBrief` for a start,
- * `steerBrief`/`correctionBrief` for a follow-up); `submitted` is the exact provider input that
- * wraps it, byte for byte, and `sha256` is its digest.
+ * `steerBrief`/`correctionBrief` for a follow-up); `submitted` wraps it and `sha256` is its digest.
+ * `exact` identifies input recorded at dispatch, as opposed to a reconstruction for an old run.
  */
 export interface SubmittedBrief {
   attempt: number
@@ -378,6 +378,7 @@ export interface SubmittedBrief {
   turn: number
   markdown: string
   submitted: string
+  exact: boolean
   sha256: string
   /** Paths the attempt may change. */
   scope: string[]

@@ -230,11 +230,12 @@ export class CodingRunGateway implements CodingRunApi {
     let request: CreateTurn | undefined
     await this.withRun(runId, async (run) => {
       const turn = latest(run)
+      request = this.request(run, input, turn)
       turn.attempts.push({
         requestedAt: this.stamp(),
+        submittedInput: request.input,
         ...(turn.attempts.length > 0 && { mayDuplicate: true })
       })
-      request = this.request(run, input, turn)
       return run
     })
 

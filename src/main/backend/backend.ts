@@ -259,8 +259,8 @@ export class AgentBackend implements BackendApi {
   }
 
   /**
-   * Each attempt's brief, read back from the coding run's frozen input and the turn record that
-   * holds its export token: the same bytes the provider create call carried.
+   * Each attempt's approved brief and recorded provider input. Older runs retain enough
+   * information to reconstruct the input for inspection.
    */
   private async submittedBriefs(handoffId: string): Promise<SubmittedBrief[]> {
     const h = (await this.stores.workflow.handoff(handoffId))!
@@ -272,7 +272,8 @@ export class AgentBackend implements BackendApi {
       ])
       const turn = run?.turns[r.run.turn ?? 0]
       if (!run || !input || !turn) continue
-      const submitted = turnPrompt(input, turn)
+      const recorded = turn.attempts.at(-1)?.submittedInput
+      const submitted = recorded ?? turnPrompt(input, turn)
       briefs.push({
         attempt: r.attempt,
         origin: r.origin ?? 'start',
@@ -280,6 +281,7 @@ export class AgentBackend implements BackendApi {
         turn: turn.index,
         markdown: turn.kind === 'start' ? input.handoff.intent : (turn.message ?? ''),
         submitted,
+        exact: recorded !== undefined,
         sha256: sha256(submitted),
         scope: input.handoff.scope,
         sources: turn.kind === 'start' ? input.files.map((f) => f.path) : []
