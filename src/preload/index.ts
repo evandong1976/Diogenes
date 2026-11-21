@@ -1,8 +1,14 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import { geminiChannels, type DiogenesApi } from '../shared/gemini'
 
 // Custom APIs for renderer
-const api = {}
+const api: DiogenesApi = {
+  gemini: {
+    buildCurrentGraph: () => ipcRenderer.invoke(geminiChannels.buildCurrentGraph),
+    proposeEdit: (graph, png) => ipcRenderer.invoke(geminiChannels.proposeEdit, graph, png)
+  }
+}
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
