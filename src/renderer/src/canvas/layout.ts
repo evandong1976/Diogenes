@@ -3,7 +3,8 @@ export interface Point {
   y: number
 }
 
-const COLUMN_GAP = 280
+// Nodes are 260px wide (design system v0.2) and about 90px tall.
+const COLUMN_GAP = 360
 const ROW_GAP = 130
 
 const MAX_ROWS = 6

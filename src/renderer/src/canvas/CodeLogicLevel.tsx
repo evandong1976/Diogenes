@@ -1,11 +1,20 @@
 import { useMemo, useRef, useState } from 'react'
 import type { GithubRepo } from '../../../preload'
-import type { ProposedEdit } from '../../../shared/gemini'
+import type { CatalogGraph } from '../../../shared/catalog'
+import type { CurrentGraph, ProposedEdit } from '../../../shared/gemini'
 import { applyEdit } from '../../../shared/graph'
 import { DiagramCanvas } from './DiagramCanvas'
 import { DrawLayer } from './DrawLayer'
-import { stateDiagram } from './diagrams'
+import { catalogStateMachines, stateDiagram, stateGraphFromCatalog } from './diagrams'
 import { exampleEdit, initialLogic, type LogicState } from './logic'
+
+// Gemini proposes from structure and the drawing; source lines are display-only here, and the
+// main process may not hold the files they point into (an indexed state machine, for example).
+const withoutSources = (graph: CurrentGraph): CurrentGraph => ({
+  initialStateId: graph.initialStateId,
+  states: graph.states.map((s) => ({ ...s, sources: [] })),
+  transitions: graph.transitions.map((t) => ({ ...t, sources: [] }))
+})
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
@@ -13,9 +22,12 @@ interface Props {
   repo: GithubRepo
   logic: LogicState
   onLogicChange(next: LogicState): void
+  /** State machines the index found can be loaded without calling Gemini. */
+  catalog: CatalogGraph | null
 }
 
-export function CodeLogicLevel({ repo, logic, onLogicChange }: Props): React.JSX.Element {
+export function CodeLogicLevel({ repo, logic, onLogicChange, catalog }: Props): React.JSX.Element {
+  const machines = useMemo(() => catalogStateMachines(catalog), [catalog])
   const canvasRef = useRef<HTMLDivElement>(null)
   const [drawing, setDrawing] = useState(false)
   const [hasInk, setHasInk] = useState(false)
@@ -62,6 +74,19 @@ export function CodeLogicLevel({ repo, logic, onLogicChange }: Props): React.JSX
       })
     })
 
+  const loadMachine = (id: string): void => {
+    const machine = machines.find((m) => m.id === id)
+    if (!machine) return
+    reset()
+    setError(null)
+    onLogicChange({
+      graph: stateGraphFromCatalog(machine),
+      source: `Index · ${machine.name}`,
+      isExample: false,
+      version: logic.version + 1
+    })
+  }
+
   const useExample = (): Promise<void> =>
     run('Loading example…', async () => {
       await window.api.gemini.useFixture()
@@ -78,7 +103,7 @@ export function CodeLogicLevel({ repo, logic, onLogicChange }: Props): React.JSX
         width: rect.width,
         height: rect.height
       })
-      const result = await window.api.gemini.proposeEdit(logic.graph, png)
+      const result = await window.api.gemini.proposeEdit(withoutSources(logic.graph), png)
       setDrawing(false)
       if (result.kind === 'edit') {
         setProposal(result)
@@ -138,6 +163,23 @@ export function CodeLogicLevel({ repo, logic, onLogicChange }: Props): React.JSX
                 </button>
               )}
               <span className="toolbar-divider" />
+              {machines.length > 0 && (
+                <select
+                  className="dg-input"
+                  aria-label="Indexed state machine"
+                  value=""
+                  onChange={(e) => loadMachine(e.target.value)}
+                >
+                  <option value="" disabled>
+                    {machines.length} indexed state machine{machines.length === 1 ? '' : 's'}
+                  </option>
+                  {machines.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              )}
               {logic.isExample ? (
                 <button className="dg-btn" onClick={buildFromRepo} disabled={!!busy}>
                   Build from {repo.fullName}

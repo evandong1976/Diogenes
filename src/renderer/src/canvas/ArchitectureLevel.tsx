@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import type { GithubRepo } from '../../../preload'
+import type { CatalogGraph } from '../../../shared/catalog'
 import type { Architecture } from '../../../shared/gemini'
 import type { IndexStatus } from '../../../shared/indexing'
 import { DiagramCanvas } from './DiagramCanvas'
-import { architectureDiagram } from './diagrams'
+import { architectureDiagram, catalogDiagram, catalogKindsByLevel } from './diagrams'
 import { indexRunning } from './indexStatus'
 
 type Level = 'infrastructure' | 'integrations'
@@ -11,17 +12,11 @@ type Level = 'infrastructure' | 'integrations'
 interface Props {
   repo: GithubRepo
   level: Level
+  /** The indexed catalog. When present it is drawn directly; Gemini is only the fallback. */
+  catalog: CatalogGraph | null
   architecture: Architecture | null
   onArchitectureChange(next: Architecture): void
   indexStatus: IndexStatus | null
-}
-
-function evidenceLabel(architecture: Architecture): string {
-  const e = architecture.evidence
-  if (e?.source === 'index') {
-    return `From index ${e.sha.slice(0, 7)}${e.partial ? ' (partial)' : ''} · connections counted from code`
-  }
-  return 'From file list · no index yet'
 }
 
 const LEVEL_NAMES: Record<Level, string> = {
@@ -29,23 +24,30 @@ const LEVEL_NAMES: Record<Level, string> = {
   integrations: 'Integrations'
 }
 
-/** Infrastructure and Integrations share one Gemini call, so the result is held by the parent. */
 export function ArchitectureLevel({
   repo,
   level,
+  catalog,
   architecture,
   onArchitectureChange,
   indexStatus
 }: Props): React.JSX.Element {
-  const waiting = indexRunning(indexStatus)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [version, setVersion] = useState(0)
+  const waiting = indexRunning(indexStatus)
 
-  const diagram = useMemo(
+  const fromCatalog = useMemo(
+    () => catalog && catalogDiagram(catalog, catalogKindsByLevel[level]),
+    [catalog, level]
+  )
+  const fromFiles = useMemo(
     () => architecture && architectureDiagram(architecture[level]),
     [architecture, level]
   )
+  // The index wins whenever it has something for this level.
+  const useCatalog = !!fromCatalog?.nodes.length
+  const diagram = useCatalog ? fromCatalog : fromFiles
 
   const analyze = async (): Promise<void> => {
     setBusy(true)
@@ -66,30 +68,49 @@ export function ArchitectureLevel({
     }
   }
 
+  const source = useCatalog
+    ? `From index ${catalog!.commit.sha.slice(0, 7)} · ${fromCatalog!.nodes.length} catalog nodes`
+    : architecture
+      ? 'Inferred by Gemini from the file list'
+      : waiting
+        ? 'Indexing…'
+        : catalog
+          ? 'Index has nothing at this level'
+          : 'Not indexed'
+
   return (
     <div className="level">
       <div className="toolbar row">
         <span className="dg-label">
-          {LEVEL_NAMES[level]} · {architecture ? evidenceLabel(architecture) : 'Not analyzed yet'}
+          {LEVEL_NAMES[level]} · {source}
         </span>
-        <button className="dg-btn" onClick={analyze} disabled={busy || waiting}>
-          {waiting
-            ? 'Waiting for index…'
-            : architecture
-              ? 'Re-analyze'
-              : `Analyze ${repo.fullName}`}
-        </button>
+        {!useCatalog && (
+          <button className="dg-btn" onClick={analyze} disabled={busy || waiting}>
+            {waiting
+              ? 'Waiting for index…'
+              : architecture
+                ? 'Re-infer with Gemini'
+                : 'Infer with Gemini'}
+          </button>
+        )}
       </div>
       {(busy || error) && (
         <p className={error ? 'notice error' : 'notice dg-data'}>
-          {error ?? 'Grouping the repo into components…'}
+          {error ?? 'Reading the file list and manifests…'}
         </p>
       )}
       {diagram ? (
-        <DiagramCanvas diagram={diagram} viewKey={`${level}-${version}`} />
+        <DiagramCanvas
+          diagram={diagram}
+          viewKey={`${level}-${useCatalog ? catalog!.commit.sha : version}`}
+        />
       ) : (
-        <div className="dg-canvas canvas-empty level-empty">
-          <span className="dg-label">Analyze the repo to see its {LEVEL_NAMES[level]}</span>
+        <div className="dg-canvas--dots canvas-empty level-empty">
+          <span className="dg-label">
+            {waiting
+              ? `Indexing ${repo.fullName}…`
+              : `No ${LEVEL_NAMES[level]} yet. Index the repo, or infer it with Gemini.`}
+          </span>
         </div>
       )}
     </div>

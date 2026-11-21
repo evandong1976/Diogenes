@@ -3,7 +3,7 @@ import type { GithubRepo, GithubUser } from '../../preload'
 import { SignIn } from './SignIn'
 import { RepoPicker } from './RepoPicker'
 import type { Architecture } from '../../shared/gemini'
-import type { IndexStatus } from '../../shared/indexing'
+import type { IndexStatus, SoftwareGraph } from '../../shared/indexing'
 import { CodeLogicLevel } from './canvas/CodeLogicLevel'
 import { initialLogic, type LogicState } from './canvas/logic'
 import { ArchitectureLevel } from './canvas/ArchitectureLevel'
@@ -25,11 +25,15 @@ function App(): React.JSX.Element {
   // Canvas draws the diagrams; Catalog is the searchable list where catalog entries are edited.
   const [view, setView] = useState<'canvas' | 'catalog'>('canvas')
 
+  // The indexed graph; its `catalog` is what the architecture levels draw.
+  const [indexed, setIndexed] = useState<SoftwareGraph | null>(null)
+
   const pickRepo = (next: GithubRepo): void => {
     window.api.gemini.useFixture()
     setLogic(initialLogic)
     setArchitecture(null)
     setIndexStatus(null)
+    setIndexed(null)
     setRepo(next)
     // Index in the background; diagrams use it as evidence once it's ready.
     window.api.indexing.start(next.id).then(setIndexStatus, (e: unknown) =>
@@ -54,6 +58,20 @@ function App(): React.JSX.Element {
       if (status.repoId === repoId) setIndexStatus(status)
     })
   }, [repoId])
+
+  // Load the published graph whenever a finished snapshot appears or changes (cached, or fresh).
+  const publishedSha = indexStatus?.lastIndexed?.sha
+  useEffect(() => {
+    if (repoId === undefined || !publishedSha) return
+    let active = true
+    window.api.indexing.getGraph(repoId).then(
+      (graph) => active && setIndexed(graph),
+      () => active && setIndexed(null)
+    )
+    return () => {
+      active = false
+    }
+  }, [repoId, publishedSha])
 
   const signOut = async (): Promise<void> => {
     await window.api.github.logout()
@@ -92,7 +110,12 @@ function App(): React.JSX.Element {
       ) : (
         <main className="workspace">
           {level === 2 ? (
-            <CodeLogicLevel repo={repo} logic={logic} onLogicChange={setLogic} />
+            <CodeLogicLevel
+              repo={repo}
+              logic={logic}
+              onLogicChange={setLogic}
+              catalog={indexed?.catalog ?? null}
+            />
           ) : (
             <ArchitectureLevel
               repo={repo}
@@ -100,6 +123,7 @@ function App(): React.JSX.Element {
               architecture={architecture}
               onArchitectureChange={setArchitecture}
               indexStatus={indexStatus}
+              catalog={indexed?.catalog ?? null}
             />
           )}
         </main>

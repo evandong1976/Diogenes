@@ -10,35 +10,59 @@ import {
   type NodeProps
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { Change, Diagram, DiagramEdge, DiagramNode } from './diagrams'
+import type { Change, Diagram, DiagramEdge, DiagramNode, PortType } from './diagrams'
 import { layeredLayout } from './layout'
 
 type CardNode = Node<DiagramNode, 'card'>
 
-// Design system: proposed changes are marigold, removals are poppy, everything else is a connector.
+// Design system v0.2: edges take their port type's color; proposed are marigold, removals poppy.
 const COLORS: Record<Change, string> = {
   unchanged: 'var(--dg-connector)',
   added: 'var(--dg-accent)',
   removed: 'var(--dg-danger)'
 }
+const PORT_COLORS: Record<PortType, string> = {
+  http: 'var(--dg-port-http)',
+  data: 'var(--dg-port-data)',
+  auth: 'var(--dg-port-auth)',
+  event: 'var(--dg-port-event)'
+}
+const edgeColor = (e: DiagramEdge): string =>
+  e.change === 'unchanged' ? PORT_COLORS[e.type] : COLORS[e.change]
+
+// Design system v0.2 node states. Selection wins so the selected item is always visible.
+function nodeState(data: DiagramNode, selected: boolean): string | undefined {
+  if (selected) return 'selected'
+  if (data.change === 'added') return 'proposed'
+  if (data.unresolved) return 'error'
+  return undefined
+}
 
 function CardNodeView({ data, selected }: NodeProps<CardNode>): React.JSX.Element {
   return (
-    <div
-      className="dg-node diagram-node"
-      data-selected={selected ? 'true' : undefined}
-      data-proposed={data.change === 'added' ? 'true' : undefined}
-    >
-      <Handle type="target" position={Position.Left} />
-      <div className="diagram-node-header dg-label">
-        <span>
+    <div className="dg-node diagram-node" data-state={nodeState(data, selected)}>
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="dg-port dg-port--in"
+        data-type="data"
+      />
+      <div className="dg-node__header">
+        <span className="dg-node__title">{data.label}</span>
+        <span className="dg-node__metric">{data.tag ?? data.meta}</span>
+      </div>
+      <div className="dg-node__desc">
+        <span className="dg-label">
           {data.kind} · {data.id}
         </span>
-        {data.tag && <span className="dg-pill">{data.tag}</span>}
+        {data.detail && <div className="diagram-node-detail">{data.detail}</div>}
       </div>
-      <div className="diagram-node-name">{data.label}</div>
-      <div className="dg-data diagram-node-meta">{data.meta}</div>
-      <Handle type="source" position={Position.Right} />
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="dg-port dg-port--out"
+        data-type="data"
+      />
     </div>
   )
 }
@@ -77,16 +101,18 @@ export function DiagramCanvas({ diagram, viewKey, canvasRef, overlay }: Props): 
       data: n
     }))
     const edges: Edge[] = diagram.edges.map((e) => {
-      const color = COLORS[e.change]
+      const color = edgeColor(e)
       return {
         id: e.id,
         source: e.from,
         target: e.to,
         label: truncate(e.label),
+        // React Flow's default edge is a cubic curve with horizontal tangents, as v0.2 specifies.
         style: {
           stroke: color,
-          strokeWidth: 1,
-          strokeDasharray: e.change === 'unchanged' ? undefined : '4 3'
+          strokeWidth: 'var(--dg-edge-w)',
+          strokeOpacity: 0.85,
+          strokeDasharray: e.change === 'unchanged' ? undefined : '5 4'
         },
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
         labelStyle: { fill: 'var(--dg-text-2)', font: '400 10px var(--dg-font-bit)' },
@@ -114,7 +140,7 @@ export function DiagramCanvas({ diagram, viewKey, canvasRef, overlay }: Props): 
 
   return (
     <div className="canvas-layout">
-      <div className="canvas dg-canvas" ref={canvasRef}>
+      <div className="canvas dg-canvas--dots" ref={canvasRef}>
         {empty ? (
           <div className="canvas-empty">
             <span className="dg-label">Nothing found at this level</span>

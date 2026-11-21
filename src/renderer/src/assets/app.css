@@ -189,38 +189,35 @@ a {
   flex-direction: column;
   gap: var(--dg-space-2);
 }
+/* Canvas nodes use the v0.2 .dg-node card (header + description); sizes come from tokens. */
 .diagram-node {
-  min-width: 152px;
-  padding: var(--dg-space-3) var(--dg-space-4);
+  width: 260px;
+}
+.diagram-node .dg-node__desc {
   display: flex;
   flex-direction: column;
   gap: var(--dg-space-2);
+  max-height: none;
+  padding-bottom: var(--dg-space-4);
+  border-bottom: 0;
 }
-.diagram-node-header {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--dg-space-4);
-}
-.diagram-node-name {
-  font: 600 13px/1.2 var(--dg-font-ui);
-}
-.diagram-node .react-flow__handle {
-  width: 6px;
-  height: 6px;
-  min-width: 0;
-  min-height: 0;
-  border-radius: 0;
-  border: 1px solid var(--dg-border-strong);
-  background: var(--dg-surface-3);
-}
-
-.diagram-node {
-  max-width: 220px;
-}
-.diagram-node-meta {
+.diagram-node-detail {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Let .dg-port's look win over React Flow's default handle; React Flow keeps the positioning. */
+.diagram-node .react-flow__handle.dg-port {
+  width: var(--dg-port-size);
+  height: var(--dg-port-size);
+  min-width: 0;
+  min-height: 0;
+  border: 2px solid var(--dg-port-color, var(--dg-port-data));
+  background: var(--dg-port-color, var(--dg-port-data));
+  box-shadow: 0 0 0 2px var(--dg-bg);
+}
+.diagram-node[data-state='proposed'] .react-flow__handle.dg-port {
+  background: var(--dg-bg);
 }
 .canvas > .canvas-empty {
   height: 100%;
@@ -249,6 +246,9 @@ a {
 .draw-layer[data-active] {
   pointer-events: auto;
   cursor: crosshair;
+}
+
+/* Catalog list view (RepositoryCatalog) */
 .repository-catalog {
   display: flex;
   flex-direction: column;

@@ -88,11 +88,8 @@ export interface ArchitectureGraph {
 export interface Architecture {
   infrastructure: ArchitectureGraph
   integrations: ArchitectureGraph
-  /**
-   * Where the diagram came from. `index`: components group indexed folders and packages, and
-   * connections are counted from indexed imports and calls. `files`: Gemini read the file list.
-   */
-  evidence?: { source: 'index'; sha: string; partial: boolean } | { source: 'files' }
+  /** `files`: Gemini inferred this from the file list and manifests, not from the index. */
+  evidence?: { source: 'files' }
 }
 
 /** A rectangle in window CSS pixels. */

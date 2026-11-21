@@ -9,14 +9,6 @@ import type { SoftwareGraph } from '../../shared/indexing'
 import { getFileText, getRepoTree, type TreeFile } from '../github'
 import { readIndexedGraph } from '../indexing/ipc'
 import {
-  buildFromGrouping,
-  catalogInstruction,
-  catalogPrompt,
-  catalogSchema,
-  summarizeIndex,
-  validateGrouping
-} from './catalog.ts'
-import {
   architectureSchema,
   proposalSchema,
   repoGraphSchema,
@@ -194,32 +186,11 @@ short label, a one-line detail, and up to 4 supporting paths copied exactly from
 Use type "other" when no type fits. Connection labels are short, such as HTTP, SQL, OAuth, SDK,
 deploy. Leave a level empty rather than guess.`
 
+/**
+ * Fallback for repos without an indexed catalog (the canvas draws the catalog directly when
+ * there is one): Gemini reads the file list and manifests.
+ */
 export async function buildArchitecture(repo: RepoRef): Promise<Architecture> {
-  const graph = await indexedGraph(repo)
-  return graph ? architectureFromIndex(graph) : architectureFromFiles(repo)
-}
-
-/** Components group indexed folders and packages; connections are counted from the index. */
-async function architectureFromIndex(graph: SoftwareGraph): Promise<Architecture> {
-  const summary = summarizeIndex(graph)
-  const grouping = validateGrouping(
-    await generate(
-      'gemini-4-hydrogen',
-      catalogInstruction,
-      [{ text: catalogPrompt(summary) }],
-      catalogSchema
-    ),
-    summary
-  )
-  const result = buildFromGrouping(grouping, summary, new Set(graph.files.map((f) => f.path)))
-  return {
-    ...result,
-    evidence: { source: 'index', sha: graph.commit.sha, partial: graph.status === 'partial' }
-  }
-}
-
-/** Fallback when the repo has no index: Gemini reads the file list and manifests. */
-async function architectureFromFiles(repo: RepoRef): Promise<Architecture> {
   const tree = (await getRepoTree(repo.fullName, repo.branch)).filter(
     (f) => !/(^|\/)node_modules\//.test(f.path)
   )
