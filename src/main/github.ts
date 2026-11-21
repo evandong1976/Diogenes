@@ -9,6 +9,9 @@ const SCOPE = 'repo read:user'
 const tokenPath = (): string => join(app.getPath('userData'), 'github-token')
 
 let token: string | null = null
+// Bumped on every sign-in and sign-out so long-running work can tell the account changed.
+let generation = 0
+const sessionListeners = new Set<() => void>()
 let pending: { deviceCode: string; interval: number; expiresAt: number } | null = null
 
 async function loadToken(): Promise<string | null> {
@@ -21,31 +24,66 @@ async function loadToken(): Promise<string | null> {
   return token
 }
 
+function sessionChanged(): void {
+  generation++
+  for (const l of sessionListeners) l()
+}
+
 async function saveToken(value: string): Promise<void> {
   token = value
   await writeFile(tokenPath(), safeStorage.encryptString(value))
+  sessionChanged()
 }
 
 async function logout(): Promise<void> {
   token = null
   await rm(tokenPath(), { force: true })
+  sessionChanged()
 }
 
-/** GET by default; passing a body makes it a JSON POST. */
-async function githubApi<T>(path: string, body?: unknown): Promise<T> {
+/** Identifies the current sign-in. Changes whenever the account signs in or out. */
+export function sessionGeneration(): number {
+  return generation
+}
+
+export function onSessionChange(listener: () => void): () => void {
+  sessionListeners.add(listener)
+  return () => sessionListeners.delete(listener)
+}
+
+/**
+ * Authorized request to the GitHub REST API. The token never leaves the main process.
+ * Returns the raw response so callers can stream bodies (tarballs) or read 404s.
+ * GET by default; passing `body` makes it a JSON POST.
+ */
+export async function githubFetch(
+  path: string,
+  init: { accept?: string; signal?: AbortSignal; body?: unknown } = {}
+): Promise<Response> {
+  const current = await loadToken()
+  if (!current) throw new Error('Not signed in to GitHub.')
+  const { body } = init
   const res = await fetch(`https://api.github.com${path}`, {
     method: body === undefined ? 'GET' : 'POST',
     headers: {
-      Authorization: `Bearer ${await loadToken()}`,
-      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${current}`,
+      Accept: init.accept ?? 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' })
     },
-    body: body === undefined ? undefined : JSON.stringify(body)
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: init.signal
   })
   if (res.status === 401) {
     await logout()
     throw new Error('GitHub session expired. Sign in again.')
   }
+  return res
+}
+
+/** GET by default; passing a body makes it a JSON POST. */
+async function githubApi<T>(path: string, body?: unknown): Promise<T> {
+  const res = await githubFetch(path, { body })
   if (!res.ok) {
     // GitHub explains 4xx failures, e.g. 422 "name already exists on this account".
     const err = (await res.json().catch(() => null)) as {
@@ -56,6 +94,29 @@ async function githubApi<T>(path: string, body?: unknown): Promise<T> {
     throw new Error(detail ? `GitHub: ${detail}` : `GitHub API ${res.status} on ${path}`)
   }
   return res.json() as Promise<T>
+}
+
+export type AuthorizedRepo = { id: number; fullName: string; defaultBranch: string }
+
+/**
+ * Looks a repository up by numeric ID with the current session's token.
+ * Null when the current account cannot read it (GitHub answers 404 for both cases).
+ */
+export async function getAuthorizedRepo(
+  id: number,
+  signal?: AbortSignal
+): Promise<AuthorizedRepo | null> {
+  const res = await githubFetch(`/repositories/${id}`, { signal })
+  if (res.status === 404 || res.status === 403) return null
+  if (!res.ok) throw new Error(`GitHub API ${res.status} looking up repository ${id}`)
+  const r = (await res.json()) as {
+    id: number
+    full_name: string
+    default_branch: string
+    permissions?: { pull?: boolean }
+  }
+  if (r.id !== id || r.permissions?.pull === false) return null
+  return { id: r.id, fullName: r.full_name, defaultBranch: r.default_branch }
 }
 
 type OAuthResponse = Partial<{
@@ -167,6 +228,32 @@ async function createRepo(_e: unknown, input: NewRepo): Promise<GithubRepo> {
     auto_init: true
   })
   return toRepo(repo)
+}
+
+export interface TreeFile {
+  path: string
+  size: number
+}
+
+const encodePath = (path: string): string => path.split('/').map(encodeURIComponent).join('/')
+
+/** Every file in the repo at `branch`. Large repos may come back truncated by GitHub. */
+export async function getRepoTree(fullName: string, branch: string): Promise<TreeFile[]> {
+  const tree = await githubApi<{ tree: { path: string; type: string; size?: number }[] }>(
+    `/repos/${fullName}/git/trees/${encodeURIComponent(branch)}?recursive=1`
+  )
+  return tree.tree
+    .filter((entry) => entry.type === 'blob')
+    .map((entry) => ({ path: entry.path, size: entry.size ?? 0 }))
+}
+
+export async function getFileText(fullName: string, branch: string, path: string): Promise<string> {
+  const res = await githubFetch(
+    `/repos/${fullName}/contents/${encodePath(path)}?ref=${encodeURIComponent(branch)}`,
+    { accept: 'application/vnd.github.raw+json' }
+  )
+  if (!res.ok) throw new Error(`GitHub API ${res.status} reading ${path}`)
+  return res.text()
 }
 
 export function registerGithubIpc(): void {

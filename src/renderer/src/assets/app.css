@@ -136,6 +136,185 @@ a {
   place-items: center;
 }
 
+/* Code logic level: toolbar, React Flow canvas and inspector */
+.workspace {
+  min-height: 0;
+  display: flex;
+}
+.level {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.toolbar {
+  padding: var(--dg-space-3) var(--dg-space-4);
+  border-bottom: 1px solid var(--dg-border);
+  background: var(--dg-surface-1);
+}
+.canvas-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.canvas {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.canvas .react-flow {
+  background: transparent;
+}
+.canvas .react-flow__controls {
+  box-shadow: none;
+  border: 1px solid var(--dg-border-strong);
+}
+.canvas .react-flow__controls-button {
+  background: var(--dg-surface-3);
+  border-color: var(--dg-border-strong);
+  fill: var(--dg-text-2);
+}
+.inspector {
+  width: 280px;
+  padding: var(--dg-space-5);
+  border-left: 1px solid var(--dg-border);
+  background: var(--dg-surface-1);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dg-space-4);
+}
+.sources {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dg-space-2);
+}
+/* Canvas nodes use the v0.2 .dg-node card (header + description); sizes come from tokens. */
+.diagram-node {
+  width: 260px;
+}
+.diagram-node .dg-node__desc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dg-space-2);
+  max-height: none;
+  padding-bottom: var(--dg-space-4);
+  border-bottom: 0;
+}
+.diagram-node-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Let .dg-port's look win over React Flow's default handle; React Flow keeps the positioning. */
+.diagram-node .react-flow__handle.dg-port {
+  width: var(--dg-port-size);
+  height: var(--dg-port-size);
+  min-width: 0;
+  min-height: 0;
+  border: 2px solid var(--dg-port-color, var(--dg-port-data));
+  background: var(--dg-port-color, var(--dg-port-data));
+  box-shadow: 0 0 0 2px var(--dg-bg);
+}
+.diagram-node[data-state='proposed'] .react-flow__handle.dg-port {
+  background: var(--dg-bg);
+}
+.canvas > .canvas-empty {
+  height: 100%;
+}
+.level-empty {
+  flex: 1;
+}
+.toolbar-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--dg-border);
+}
+.notice {
+  padding: var(--dg-space-3) var(--dg-space-4);
+  border-bottom: 1px solid var(--dg-border);
+  background: var(--dg-surface-1);
+}
+.draw-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
+}
+.draw-layer[data-active] {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+/* Catalog list view (RepositoryCatalog) */
+.repository-catalog {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+.catalog-toolbar,
+.catalog-message {
+  padding: var(--dg-space-4) var(--dg-space-6);
+  background: var(--dg-surface-1);
+  border-bottom: 1px solid var(--dg-border);
+}
+.catalog-toolbar > div {
+  display: grid;
+  gap: var(--dg-space-2);
+}
+.catalog-body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  min-height: 0;
+}
+.catalog-list,
+.catalog-detail {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--dg-space-4);
+  padding: var(--dg-space-6);
+  min-width: 0;
+  overflow: auto;
+}
+.catalog-detail {
+  background: var(--dg-surface-1);
+  border-left: 1px solid var(--dg-border);
+  overflow-wrap: anywhere;
+}
+.catalog-detail .row input {
+  flex: 1;
+  min-width: 0;
+}
+.catalog-node {
+  width: 100%;
+  margin-bottom: var(--dg-space-2);
+  padding: var(--dg-space-3) var(--dg-space-4);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--dg-space-4);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.catalog-node .dg-label,
+.catalog-toolbar button,
+.catalog-detail form button {
+  flex-shrink: 0;
+}
+
+.catalog-create {
+  display: grid;
+  gap: var(--dg-space-2);
+}
+
 /* Create-repo form */
 .field {
   display: flex;

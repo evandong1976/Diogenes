@@ -1,6 +1,6 @@
 {
   "extends": "@electron-toolkit/tsconfig/tsconfig.node.json",
-  "include": ["electron.vite.config.*", "src/main/**/*", "src/preload/**/*", "scripts/prove-gemini.ts"],
+  "include": ["electron.vite.config.*", "src/main/**/*", "src/preload/**/*", "scripts/prove-gemini.ts", "test/indexing/**/*", "test/catalog/**/*", "vitest.config.mts"],
   "compilerOptions": {
     "composite": true,
     "allowImportingTsExtensions": true,

@@ -4,6 +4,13 @@ import { SignIn } from './SignIn'
 import { RepoPicker } from './RepoPicker'
 import { CreateRepo } from './CreateRepo'
 import { NewProject } from './NewProject'
+import type { Architecture } from '../../shared/gemini'
+import type { IndexStatus, SoftwareGraph } from '../../shared/indexing'
+import { CodeLogicLevel } from './canvas/CodeLogicLevel'
+import { initialLogic, type LogicState } from './canvas/logic'
+import { ArchitectureLevel } from './canvas/ArchitectureLevel'
+import { indexLabel } from './canvas/indexStatus'
+import { RepositoryCatalog } from './RepositoryCatalog'
 
 const LEVELS = ['Infrastructure', 'Integrations', 'Code logic'] as const
 
@@ -12,11 +19,63 @@ function App(): React.JSX.Element {
   const [repo, setRepo] = useState<GithubRepo | null>(null)
   const [creating, setCreating] = useState(false)
   const [newRepo, setNewRepo] = useState<GithubRepo | null>(null)
-  const [level, setLevel] = useState(0)
+  // Code logic opens first: it works from the saved example without any API calls.
+  const [level, setLevel] = useState(2)
+  // Held here so switching levels keeps each level's diagram.
+  const [logic, setLogic] = useState<LogicState>(initialLogic)
+  const [architecture, setArchitecture] = useState<Architecture | null>(null)
+
+  const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null)
+  // Canvas draws the diagrams; Catalog is the searchable list where catalog entries are edited.
+  const [view, setView] = useState<'canvas' | 'catalog'>('canvas')
+
+  // The indexed graph; its `catalog` is what the architecture levels draw.
+  const [indexed, setIndexed] = useState<SoftwareGraph | null>(null)
+
+  const pickRepo = (next: GithubRepo): void => {
+    window.api.gemini.useFixture()
+    setLogic(initialLogic)
+    setArchitecture(null)
+    setIndexStatus(null)
+    setIndexed(null)
+    setRepo(next)
+    // Index in the background; diagrams use it as evidence once it's ready.
+    window.api.indexing.start(next.id).then(setIndexStatus, (e: unknown) =>
+      setIndexStatus({
+        repoId: next.id,
+        fullName: next.fullName,
+        state: 'failed',
+        error: e instanceof Error ? e.message : String(e),
+        lastIndexed: null
+      })
+    )
+  }
 
   useEffect(() => {
     window.api.github.getUser().then(setUser, () => setUser(null))
   }, [])
+
+  const repoId = repo?.id
+  useEffect(() => {
+    if (repoId === undefined) return
+    return window.api.indexing.onStatus((status) => {
+      if (status.repoId === repoId) setIndexStatus(status)
+    })
+  }, [repoId])
+
+  // Load the published graph whenever a finished snapshot appears or changes (cached, or fresh).
+  const publishedSha = indexStatus?.lastIndexed?.sha
+  useEffect(() => {
+    if (repoId === undefined || !publishedSha) return
+    let active = true
+    window.api.indexing.getGraph(repoId).then(
+      (graph) => active && setIndexed(graph),
+      () => active && setIndexed(null)
+    )
+    return () => {
+      active = false
+    }
+  }, [repoId, publishedSha])
 
   const signOut = async (): Promise<void> => {
     await window.api.github.logout()
@@ -44,7 +103,7 @@ function App(): React.JSX.Element {
     return (
       <RepoPicker
         user={user}
-        onPick={setRepo}
+        onPick={pickRepo}
         onNew={() => setCreating(true)}
         onSignOut={signOut}
       />
@@ -63,15 +122,44 @@ function App(): React.JSX.Element {
             </button>
           ))}
         </div>
+        <div className="segmented" role="group" aria-label="View">
+          <button onClick={() => setView('canvas')} aria-pressed={view === 'canvas'}>
+            Canvas
+          </button>
+          <button onClick={() => setView('catalog')} aria-pressed={view === 'catalog'}>
+            Catalog
+          </button>
+        </div>
       </nav>
-      <main className="dg-canvas--dots canvas-empty">
-        <span className="dg-label">Nothing parsed yet</span>
-      </main>
+      {view === 'catalog' ? (
+        <RepositoryCatalog key={repo.id} repoId={repo.id} level={level} />
+      ) : (
+        <main className="workspace">
+          {level === 2 ? (
+            <CodeLogicLevel
+              repo={repo}
+              logic={logic}
+              onLogicChange={setLogic}
+              catalog={indexed?.catalog ?? null}
+            />
+          ) : (
+            <ArchitectureLevel
+              repo={repo}
+              level={level === 0 ? 'infrastructure' : 'integrations'}
+              architecture={architecture}
+              onArchitectureChange={setArchitecture}
+              indexStatus={indexStatus}
+              catalog={indexed?.catalog ?? null}
+            />
+          )}
+        </main>
+      )}
       <footer className="statusbar dg-data">
         <span>
           L{level + 1} · {LEVELS[level]}
         </span>
         <span>{repo.defaultBranch}</span>
+        <span>{indexLabel(indexStatus)}</span>
       </footer>
     </div>
   )
