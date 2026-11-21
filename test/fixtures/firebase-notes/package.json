@@ -1,0 +1,9 @@
+{
+  "name": "notes-app",
+  "private": true,
+  "main": "src/main.ts",
+  "dependencies": {
+    "electron": "1.0.0",
+    "firebase": "10.0.0"
+  }
+}

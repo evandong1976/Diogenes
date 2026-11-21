@@ -13,6 +13,7 @@ import {
   type NodeProps,
   type ReactFlowInstance
 } from '@xyflow/react'
+import type { CatalogGraph, CatalogNode } from '../../../shared/catalog'
 import { flowKinds, type AppFlow, type FlowKind } from '../../../shared/gemini'
 import { brandFor } from './brands'
 import {
@@ -30,10 +31,14 @@ import {
 import type { Point } from './layout'
 import { PaneToggle } from './PaneToggle'
 import { useWorkspace } from './components'
+import { componentsInBox, type Overlay, type OverlayChange } from './proposalOverlay'
 
 // React Flow node data must be a plain object type; interfaces don't qualify.
 type Plain<T> = { [K in keyof T]: T[K] }
-type BoxNode = Node<Plain<Box> & { dim: boolean }, 'box'>
+type BoxNode = Node<
+  Plain<Box> & { dim: boolean; change?: OverlayChange | 'updated'; pending?: string },
+  'box'
+>
 type NoteNode = Node<Plain<Note>, 'note'>
 type AnyNode = BoxNode | NoteNode
 
@@ -86,14 +91,43 @@ function Ports(): React.JSX.Element {
   )
 }
 
+/** Design system v0.3 TYPE labels. */
+const TYPE_LABEL: Record<CatalogNode['kind'], string> = {
+  module: 'MODULE',
+  workload: 'WORK',
+  operation: 'OP',
+  resource: 'STORE',
+  dataContract: 'SCHEMA',
+  stateMachine: 'STATES',
+  view: 'VIEW',
+  trigger: 'TRIGGER',
+  workflow: 'FLOW',
+  generic: 'NODE'
+}
+
+const CHANGE_TAG: Record<OverlayChange, string> = {
+  added: 'Add',
+  removed: 'Remove',
+  updated: 'Change',
+  indexed: 'Indexed'
+}
+
 /** One of the four whiteboard shapes. */
 function BoxView({ data, selected }: NodeProps<BoxNode>): React.JSX.Element {
   const common = {
     'data-selected': selected || undefined,
     'data-proposed': data.proposed || undefined,
-    'data-dim': data.dim || undefined
+    'data-dim': data.dim || undefined,
+    'data-change': data.change
   }
-  const tag = data.proposed && <span className="flow-tag">Proposed</span>
+  const tag = data.change ? (
+    <span className="flow-tag" data-change={data.change}>
+      {CHANGE_TAG[data.change]}
+      {data.pending && data.change !== 'indexed' && ` · ${data.pending}`}
+    </span>
+  ) : (
+    data.proposed && <span className="flow-tag">Proposed</span>
+  )
 
   if (data.kind === 'screen')
     return (
@@ -200,6 +234,14 @@ interface Props {
   onOpenLogic(box: Box): void
   /** Toolbar content on the left: where the map came from, re-read button. */
   status: React.ReactNode
+  /** The design draft's catalog, for mapping boxes to indexed components. */
+  catalog?: CatalogGraph | null
+  /** The focused design proposal, drawn on top without changing the map or the draft. */
+  overlay?: Overlay | null
+  /** Shown above the canvas when the focused proposal cannot be drawn (e.g. a stale revision). */
+  notice?: React.ReactNode
+  /** The catalog component attached to the design chat. */
+  selectedComponentId?: string | null
 }
 
 export function AppCanvas({
@@ -209,16 +251,30 @@ export function AppCanvas({
   viewKey,
   focusFile,
   onOpenLogic,
-  status
+  status,
+  catalog = null,
+  overlay = null,
+  notice,
+  selectedComponentId = null
 }: Props): React.JSX.Element {
-  const { panes } = useWorkspace()
+  const { panes, onSelectComponent } = useWorkspace()
+  // The chat's attachment belongs to this canvas; leaving it (e.g. for a logic view) clears it.
+  useEffect(() => () => onSelectComponent(null), [onSelectComponent])
   const [rf, setRf] = useState<ReactFlowInstance<AnyNode> | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [moving, setMoving] = useState<Record<string, Point>>({})
   // Controlled nodes must be handed back the size React Flow measured, or they stay hidden.
   const [sizes, setSizes] = useState<Record<string, { width: number; height: number }>>({})
 
-  const boxes = useMemo((): Box[] => [...flow.boxes, ...draft.boxes], [flow, draft.boxes])
+  const boxes = useMemo(
+    (): (Box & { change?: OverlayChange; componentId?: string })[] => [
+      ...flow.boxes,
+      ...draft.boxes,
+      ...(overlay?.boxes ?? [])
+    ],
+    [flow, draft.boxes, overlay]
+  )
+  const pendingTag = overlay ? `r${overlay.baseRevision}→r${overlay.resultRevision}` : undefined
   const layout = useMemo(() => flowLayout(boxes), [boxes])
   const byId = useMemo(() => new Map(boxes.map((b) => [b.id, b])), [boxes])
 
@@ -231,9 +287,14 @@ export function AppCanvas({
       type: 'box',
       position: position(b.id, layout.get(b.id) ?? { x: 0, y: 0 }),
       selected: selectedId === b.id,
-      deletable: !!b.proposed,
+      deletable: !!b.proposed && !b.change,
       measured: sizes[b.id],
-      data: { ...b, dim: !!focusFile && !b.paths.includes(focusFile) }
+      data: {
+        ...b,
+        dim: !!focusFile && !b.paths.includes(focusFile),
+        change: b.change ?? overlay?.boxMarks[b.id],
+        pending: pendingTag
+      }
     })),
     ...draft.notes.map((n, i): NoteNode => {
       const target = n.target ? layout.get(n.target) : undefined
@@ -252,19 +313,32 @@ export function AppCanvas({
   ]
 
   const edges: Edge[] = [
-    ...([...flow.links, ...draft.links] as Link[]).map((l): Edge => {
-      const color = l.proposed ? 'var(--dg-accent)' : 'var(--dg-text-3)'
+    ...(
+      [
+        ...flow.links,
+        ...draft.links,
+        ...(overlay?.links ?? []).map((l) => ({ ...l, overlay: l.change }))
+      ] as (Link & { overlay?: 'added' | 'removed' })[]
+    ).map((l): Edge => {
+      const change = l.overlay ?? overlay?.linkMarks[l.id]
+      const color =
+        change === 'removed'
+          ? 'var(--dg-danger)'
+          : l.proposed || change === 'added'
+            ? 'var(--dg-accent)'
+            : 'var(--dg-text-3)'
       return {
         id: l.id,
         source: l.from,
         target: l.to,
-        label: l.label || undefined,
+        label: change === 'removed' ? `✕ ${l.label}`.trim() : l.label || undefined,
         selected: selectedId === l.id,
-        deletable: !!l.proposed,
+        deletable: !!l.proposed && !l.overlay,
+        className: change ? `flow-edge--${change}` : undefined,
         style: {
           stroke: color,
-          strokeWidth: 1.5,
-          strokeDasharray: l.proposed ? '6 4' : undefined
+          strokeWidth: change ? 2 : 1.5,
+          strokeDasharray: change === 'removed' ? '2 4' : l.proposed || change ? '6 4' : undefined
         },
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
         labelStyle: { fill: 'var(--dg-text-2)', font: '500 11px var(--dg-font-ui)' },
@@ -388,6 +462,27 @@ export function AppCanvas({
   const selectedBox = selectedId ? byId.get(selectedId) : undefined
   const brief = changeBrief(flow, draft)
 
+  /** Indexed components a box stands for: its own (overlay chip) or those in its files. */
+  const componentsOf = (box: (typeof boxes)[number]): CatalogNode[] => {
+    if (!catalog) return []
+    if (box.componentId) {
+      const node = catalog.nodes.find((n) => n.id === box.componentId)
+      return node ? [node] : []
+    }
+    return componentsInBox(box, catalog)
+  }
+
+  const pick = (node: CatalogNode | null): void =>
+    onSelectComponent(node ? { componentId: node.id, label: node.name } : null)
+
+  /** Selecting a box attaches its primary indexed component to the design chat. */
+  const select = (id: string | null): void => {
+    setSelectedId(id)
+    const box = id ? byId.get(id) : undefined
+    if (box) pick(componentsOf(box)[0] ?? null)
+    else if (!id) pick(null)
+  }
+
   return (
     <div className="canvas-layout">
       <div className="canvas flow-canvas dg-canvas--dots">
@@ -406,15 +501,20 @@ export function AppCanvas({
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
-            onNodeClick={(_, n) => setSelectedId(n.id)}
+            onNodeClick={(_, n) => select(n.id)}
             onEdgeClick={(_, e) => setSelectedId(e.id)}
-            onPaneClick={() => setSelectedId(null)}
+            onPaneClick={() => select(null)}
             deleteKeyCode={['Backspace', 'Delete']}
             proOptions={{ hideAttribution: true }}
           >
             <Controls showInteractive={false} />
           </ReactFlow>
         </NoteTextContext.Provider>
+        {(overlay || notice) && (
+          <div className="flow-pending" role="status" data-status={overlay?.status ?? 'stale'}>
+            {overlay ? <OverlayLegend overlay={overlay} /> : notice}
+          </div>
+        )}
         <div className="canvas-toolbar" role="toolbar" aria-label="Canvas">
           <PaneToggle side="left" />
           <span className="toolbar-divider" />
@@ -450,6 +550,10 @@ export function AppCanvas({
         {selectedBox ? (
           <BoxInspector
             box={selectedBox}
+            components={componentsOf(selectedBox)}
+            indexed={!!catalog}
+            selectedComponentId={selectedComponentId}
+            onPickComponent={pick}
             onEdit={(patch) => editBox(selectedBox.id, patch)}
             onNote={() => addNote(selectedBox.id)}
             onOpenLogic={() => onOpenLogic(selectedBox)}
@@ -481,14 +585,55 @@ export function AppCanvas({
   )
 }
 
+/** What the drawn proposal does, so the canvas reads without the chat. */
+function OverlayLegend({ overlay }: { overlay: Overlay }): React.JSX.Element {
+  const added = overlay.boxes.filter((b) => b.change === 'added').length
+  const removed =
+    overlay.boxes.filter((b) => b.change === 'removed').length +
+    Object.values(overlay.boxMarks).filter((m) => m === 'removed').length
+  const linksAdded = overlay.links.filter((l) => l.change === 'added').length
+  const linksRemoved =
+    overlay.links.filter((l) => l.change === 'removed').length +
+    Object.keys(overlay.linkMarks).length
+  const parts = [
+    added && `+${added} component${added === 1 ? '' : 's'}`,
+    removed && `−${removed} removed`,
+    linksAdded && `+${linksAdded} connection${linksAdded === 1 ? '' : 's'}`,
+    linksRemoved && `−${linksRemoved} connection${linksRemoved === 1 ? '' : 's'}`,
+    overlay.internal && `${overlay.internal} inside one box`
+  ].filter(Boolean)
+  return (
+    <>
+      <span className="flow-pending__code">
+        {overlay.status === 'pending' ? 'Pending preview' : 'Approved · not in code yet'} · r
+        {overlay.baseRevision} → r{overlay.resultRevision} @ {overlay.commitSha.slice(0, 7)}
+      </span>
+      <span>{parts.join(' · ') || 'No drawable change'}</span>
+      <span className="flow-pending__hint">
+        {overlay.status === 'pending'
+          ? 'Not applied. Approve or discard it in the design chat.'
+          : 'In the draft; send it to the coding agent from the chat.'}
+      </span>
+    </>
+  )
+}
+
 function BoxInspector({
   box,
+  components,
+  indexed,
+  selectedComponentId,
+  onPickComponent,
   onEdit,
   onNote,
   onOpenLogic,
   onRemove
 }: {
-  box: Box
+  box: Box & { change?: OverlayChange }
+  components: CatalogNode[]
+  indexed: boolean
+  selectedComponentId: string | null
+  onPickComponent(node: CatalogNode): void
   onEdit(patch: Partial<Box>): void
   onNote(): void
   onOpenLogic(): void
@@ -498,9 +643,41 @@ function BoxInspector({
     <>
       <div className="row">
         <span className="dg-label">{KIND_LABEL[box.kind]}</span>
-        {box.proposed && <span className="dg-pill flow-tag">Proposed</span>}
+        {box.change ? (
+          <span className="dg-pill flow-tag" data-change={box.change}>
+            {CHANGE_TAG[box.change]}
+          </span>
+        ) : (
+          box.proposed && <span className="dg-pill flow-tag">Proposed</span>
+        )}
       </div>
-      {box.proposed ? (
+      {indexed && (
+        <div className="dg-evidence-list" aria-label="Indexed components">
+          <div className="dg-evidence-list__head">
+            <span>
+              {components.length
+                ? `${components.length} indexed component${components.length === 1 ? '' : 's'}`
+                : box.change === 'added'
+                  ? 'Pending · not in the draft'
+                  : 'No indexed component in these files'}
+            </span>
+          </div>
+          {components.slice(0, 12).map((n) => (
+            <button
+              type="button"
+              key={n.id}
+              className="dg-evidence-list__row flow-component"
+              aria-pressed={n.id === selectedComponentId}
+              title={`${n.id} · attach to the design chat`}
+              onClick={() => onPickComponent(n)}
+            >
+              <span className="dg-evidence-list__kind">{TYPE_LABEL[n.kind]}</span>
+              <span className="dg-evidence__path">{n.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {box.proposed && !box.change ? (
         <>
           <input
             className="dg-input"
@@ -563,7 +740,7 @@ function BoxInspector({
             Open logic →
           </button>
         )}
-        {box.proposed && (
+        {box.proposed && !box.change && (
           <button className="dg-btn dg-btn--danger" onClick={onRemove}>
             Remove
           </button>

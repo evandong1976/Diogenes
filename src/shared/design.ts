@@ -104,6 +104,26 @@ export interface ProposalPreview {
 
 export type ProposalStatus = 'pending' | 'approved' | 'rejected' | 'stale'
 
+/**
+ * The design agent's plan for a proposal, in words a reviewer and a coding agent act on. The
+ * patch says what the graph becomes; the plan says how to get there and how to tell it worked.
+ * Diogenes does not verify `acceptance`; only the workflow's local obligations accept a change.
+ */
+export interface ProposalPlan {
+  /** What the system does once the change lands. */
+  behavior: string
+  /** Ordered implementation or migration steps. */
+  steps: string[]
+  /** Behavior and connections that must stay true. */
+  preserved: string[]
+  /** Checks a reviewer or the coding agent can run. Not proven by Diogenes. */
+  acceptance: string[] /**
+   * Repository-relative files the steps need beyond the touched components' own source, such as
+   * a root manifest or a new module. Each one is checked at approval and added to the scope.
+   */
+  files?: string[]
+}
+
 export interface Proposal {
   id: string
   projectId: string
@@ -113,6 +133,8 @@ export interface Proposal {
   patch: CatalogPatch
   preview: ProposalPreview
   evidence: EvidenceRecord[]
+  /** Absent on proposals recorded before plans existed. */
+  plan?: ProposalPlan
   status: ProposalStatus
   createdAt: string
   decidedAt?: string
@@ -120,6 +142,8 @@ export interface Proposal {
   reason?: string
   /** Set on approval. */
   intentId?: string
+  /** A later proposal in the same thread that revised this one (status is then `stale`). */
+  supersededBy?: string
 }
 
 /**
@@ -139,6 +163,7 @@ export interface ApprovedIntent {
   operations: CatalogOperation[]
   preview: ProposalPreview
   evidence: EvidenceRecord[]
+  plan?: ProposalPlan
   /** Source locations of every affected component and connection in the approved draft. */
   sources: { entityId: string; sources: CatalogSource[] }[]
   /** The draft graph at `fromRevision`, which the approval was made against. */

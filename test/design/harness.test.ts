@@ -57,6 +57,11 @@ const lastEvidence = (request: ModelRequest): string =>
 const insertAudit = (evidenceIds: string[]): Record<string, unknown> => ({
   summary: 'Audit every refund between submission and the charge request.',
   evidenceIds,
+  plan: {
+    behavior: 'Every submitted refund is audited before the charge is requested.',
+    steps: ['Add an audit step between submitRefund and requestRefund in src/refunds.ts.'],
+    acceptance: ['A submitted refund produces one audit entry before the charge call.']
+  },
   operations: [
     {
       type: 'insert',
@@ -160,14 +165,15 @@ describe('DesignService', () => {
     const [a, b] = (await service.getProject('refunds')).proposals
     expect([a.id, b.id]).toEqual([first.proposalId, second.proposalId])
 
-    expect((await service.approve('refunds', a.id, 0)).ok).toBe(true)
-    const draftAfterA = (await service.getProject('refunds')).draft!
+    // A second proposal in the thread revises the first; only the revision can be approved.
+    expect(a).toMatchObject({ status: 'stale', supersededBy: b.id })
+    expect((await service.approve('refunds', b.id, 0)).ok).toBe(true)
+    const draftAfterB = (await service.getProject('refunds')).draft!
 
-    const stale = await service.approve('refunds', b.id, 1)
+    const stale = await service.approve('refunds', a.id, 1)
     expect(stale).toMatchObject({ ok: false, code: 'stale', currentRevision: 1 })
     const state = await service.getProject('refunds')
-    expect(state.draft).toEqual(draftAfterA)
-    expect(state.proposals.find((p) => p.id === b.id)!.status).toBe('stale')
+    expect(state.draft).toEqual(draftAfterB)
 
     // A client still showing revision 0 is told to reload; selection of a gone ID is explicit.
     expect((await turn(service, 0)).status).toBe('stale-graph')

@@ -57,6 +57,16 @@ The sandbox is where architecture is read and edited. It follows the node-graph 
 - **Prompt pin:** a node-like card with a marigold border, `PROMPT #n · @NODE` header, the prompt text and a
   primary "Send to Claude Code ⌘↵" button. It wires to the node it's about with an `http` port.
 
+### Design proposals on the app canvas
+The open thread's newest proposal is drawn over the whiteboard without changing it, and only
+against the draft revision and commit it was checked at (otherwise a `stale` notice, nothing drawn).
+Hooks: `data-change` on `.flow-box` and `.flow-tag`, `.flow-edge--added|removed`, `.flow-pending`.
+- **added:** dashed marigold, `proposed-tint` fill, `ADD · rN→rM` tag. Connections dashed marigold.
+- **removed:** dashed poppy, `reject-tint` fill, struck-through name. Connections poppy dash 2/4 with `✕`.
+- **updated:** marigold border. **indexed** (a component the map has no box for): dotted steel.
+- `.flow-pending`: legend at the bottom of the canvas; dashed marigold while pending, moss once approved.
+Discarding or revising the proposal removes the drawing.
+
 ## Repository catalog (v0.3)
 Everything on the canvas comes from the catalog. All v0.2 graph rules still apply; this section adds
 what each catalog concept looks like. Markup hooks: `data-kind`, `data-resolution`, `data-state`,

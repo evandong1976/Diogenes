@@ -12,10 +12,12 @@ import { posix } from 'node:path'
 import { loadTypescript } from '../indexing/scip.ts'
 import { ApprovalError, git, type FrozenApproval } from './approval.ts'
 import type { CatalogEdge, CatalogGraph, CatalogNode, CatalogOperation } from '../../shared/catalog'
+import type { Proposal } from '../../shared/design'
 import type {
   ApprovalRequest,
   CatalogApprovedChange,
   ConnectionExpectation,
+  HandoffPlan,
   SourceContext
 } from '../../shared/workflow'
 
@@ -111,6 +113,11 @@ export function freezeCatalog(
   }
   const annotations: string[] = []
   const baseNodes = new Map(baseline.nodes.map((n) => [n.id, n]))
+  const createdContracts = new Set(
+    patch.operations.flatMap((op) =>
+      op.type === 'create' && op.node.kind === 'dataContract' ? [op.node.id] : []
+    )
+  )
   for (const op of patch.operations) {
     // Declaring a port contract is design metadata the editor requires before connecting;
     // it asks nothing of the code.
@@ -135,7 +142,11 @@ export function freezeCatalog(
       !!op.node.properties.behavior
   )
 
-  const scope = editableScope(baseline, after, touched, [...added, ...removed])
+  const planFiles = request.plan ? planFilesAt(repoDir, base, request.plan.files ?? []) : []
+  const scope = withFiles(
+    editableScope(baseline, after, touched, [...added, ...removed]),
+    planFiles
+  )
   if (!scope.length)
     throw new ApprovalError('The touched components have no source files to change.')
   const sourceContext = contextFor(repoDir, base, scope)
@@ -147,7 +158,13 @@ export function freezeCatalog(
     repository: baseline.repository,
     baseCommit: base,
     catalog: { schemaVersion: baseline.schemaVersion, revision: baseline.revision },
-    targetComponentId: [...touched][0] ?? patch.operations[0].type,
+    // Name a component, not a contract annotation the editor needed for the ports.
+    targetComponentId:
+      [...touched].find(
+        (id) => baseNodes.get(id)?.kind !== 'dataContract' && !createdContracts.has(id)
+      ) ??
+      [...touched][0] ??
+      patch.operations[0].type,
     beforeDigest: graphDigest(baseline),
     patch,
     afterDigest: graphDigest(after),
@@ -183,10 +200,84 @@ export function freezeCatalog(
     openChoices: ['how the change is implemented within the editable scope', 'helper names'],
     toolchain: { verifier: CATALOG_VERIFIER_ID, typescript: loadTypescript().version },
     correlation,
-    sourceContext
+    sourceContext,
+    ...(request.plan && { plan: { ...handoffPlan(request.plan, scope), files: planFiles } })
   }
   const bytes = `${JSON.stringify(packet, null, 2)}\n`
   return { approvalId: sha256(bytes), packet, bytes }
+}
+
+/**
+ * The plan's extra files, checked at the base commit: an existing path must be a regular file,
+ * and a missing one must look like a new file (a name with an extension). Directories and the
+ * repository root are refused, so a plan can widen the scope only by naming files.
+ */
+function planFilesAt(repoDir: string, base: string, files: string[]): string[] {
+  for (const path of files) {
+    if (!isRepoPath(path) || path === '.')
+      throw new ApprovalError(`The plan names ${path}, which is not a repository-relative file.`)
+    const listing = git(repoDir, ['ls-tree', '-z', base, '--', path])
+    const [meta, listed] = listing.split('\0')[0].split('\t')
+    if (listed === path) {
+      const [mode, type] = meta.split(/\s+/)
+      if (type !== 'blob' || mode === '120000')
+        throw new ApprovalError(
+          `The plan names ${path}, which is not a regular file at ${base.slice(0, 7)}.`
+        )
+    } else if (!/[^/]\.[A-Za-z0-9]+$/.test(path)) {
+      throw new ApprovalError(
+        `The plan names ${path}, which does not exist and does not look like a new file.`
+      )
+    }
+  }
+  return [...files].sort()
+}
+
+/** Scope entries plus plan files not already covered by one. */
+function withFiles(scope: string[], files: string[]): string[] {
+  const covered = (p: string): boolean => scope.some((e) => p === e || p.startsWith(`${e}/`))
+  return [...scope, ...files.filter((f) => !covered(f))].sort()
+}
+
+/**
+ * The approval-time plan for a proposal: its plan and summary, with only the evidence read at
+ * the base commit the packet freezes. Undefined for proposals recorded without a plan.
+ */
+export function planForApproval(proposal: Proposal, baseCommit: string): HandoffPlan | undefined {
+  if (!proposal.plan) return undefined
+  return {
+    summary: proposal.summary,
+    ...proposal.plan,
+    evidence: proposal.evidence
+      .filter((e) => e.commitSha === baseCommit)
+      .map(({ path, startLine, endLine, excerpt }) => ({ path, startLine, endLine, excerpt }))
+  }
+}
+
+const MAX_EVIDENCE = 8
+const MAX_EXCERPT_CHARS = 4_000
+
+/**
+ * The plan as frozen: evidence keeps only repository paths, each excerpt is bounded, and the
+ * acceptance checks stay guidance. The backend passes only evidence read at the base commit.
+ */
+function handoffPlan(plan: HandoffPlan, scope: string[]): HandoffPlan {
+  const inScope = (path: string): boolean =>
+    scope.some((entry) => path === entry || path.startsWith(`${entry}/`))
+  const evidence = plan.evidence
+    .filter((e) => isRepoPath(e.path))
+    // In-scope source first: that is what the coding agent will edit.
+    .sort((a, b) => Number(inScope(b.path)) - Number(inScope(a.path)))
+    .slice(0, MAX_EVIDENCE)
+    .map((e) => ({ ...e, excerpt: e.excerpt.slice(0, MAX_EXCERPT_CHARS) }))
+  return {
+    summary: plan.summary,
+    behavior: plan.behavior,
+    steps: [...plan.steps],
+    preserved: [...plan.preserved],
+    acceptance: [...plan.acceptance],
+    evidence
+  }
 }
 
 function nodeIdsOf(op: CatalogOperation): string[] {

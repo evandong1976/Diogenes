@@ -8,6 +8,7 @@ import type {
 import type {
   ApprovedIntent,
   EvidenceRecord,
+  ProposalPlan,
   ProposalPreview,
   VerificationReport
 } from '../../shared/design'
@@ -34,6 +35,8 @@ export interface ToolContext {
   /** Approved intents from this thread, newest last. */
   intents: ApprovedIntent[]
   evidence: EvidenceRecord[]
+  /** Source read in earlier turns of this thread at the same commit, still citable. */
+  threadEvidence?: EvidenceRecord[]
   turnId: string
   signal: AbortSignal
 }
@@ -45,7 +48,13 @@ export type ToolOutcome =
       ok: true
       response: Record<string, unknown>
       summary: string
-      proposal: { summary: string; patch: CatalogPatch; preview: ProposalPreview; evidence: EvidenceRecord[] }
+      proposal: {
+        summary: string
+        patch: CatalogPatch
+        preview: ProposalPreview
+        evidence: EvidenceRecord[]
+        plan: ProposalPlan
+      }
     }
   | {
       ok: true
@@ -94,6 +103,11 @@ const PROTOCOLS = [
 ]
 
 const str = (description: string): Record<string, unknown> => ({ type: 'string', description })
+const strList = (description: string): Record<string, unknown> => ({
+  type: 'array',
+  items: { type: 'string' },
+  description
+})
 const endpoint = {
   type: 'object',
   properties: { nodeId: { type: 'string' }, portId: { type: 'string' } },
@@ -180,7 +194,28 @@ export const toolDeclarations: FunctionDeclaration[] = [
       type: 'object',
       properties: {
         summary: str('One or two sentences the developer will approve.'),
-        evidenceIds: { type: 'array', items: { type: 'string' } },
+        evidenceIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'IDs from read_source in this or earlier turns of the thread.'
+        },
+        plan: {
+          type: 'object',
+          description:
+            'The plan the developer reviews and the coding agent receives with the patch.',
+          properties: {
+            behavior: str('What the system does once the change lands, in plain words.'),
+            steps: strList('Ordered implementation or migration steps, naming files and components.'),
+            preserved: strList('Behavior and connections that must stay true.'),
+            acceptance: strList(
+              'Concrete checks a reviewer or coding agent can run to see it worked. Diogenes does not prove these.'
+            ),
+            files: strList(
+              'Repository-relative files the steps must edit or create beyond the touched components\' source, e.g. package.json or src/lib/supabase.ts. Files only, never directories; at most 8.'
+            )
+          },
+          required: ['behavior', 'steps', 'acceptance']
+        },
         operations: {
           type: 'array',
           maxItems: MAX_OPERATIONS,
@@ -202,7 +237,7 @@ export const toolDeclarations: FunctionDeclaration[] = [
           }
         }
       },
-      required: ['summary', 'operations']
+      required: ['summary', 'plan', 'operations']
     }
   },
   {
@@ -414,8 +449,10 @@ function propose(ctx: ToolContext, args: Record<string, unknown>): ToolOutcome {
   const evidenceIds = args.evidenceIds ?? []
   if (!Array.isArray(evidenceIds) || evidenceIds.some((id) => typeof id !== 'string'))
     throw new ArgumentError('evidenceIds must be a list of IDs returned by read_source.')
-  const evidence = evidenceIds.map((id) => {
-    const found = ctx.evidence.find((e) => e.id === id)
+  const plan = planOf(args.plan)
+  const citable = [...ctx.evidence, ...(ctx.threadEvidence ?? [])]
+  const evidence = [...new Set(evidenceIds as string[])].map((id) => {
+    const found = citable.find((e) => e.id === id)
     if (!found) throw new ArgumentError(`Unknown evidenceId ${id}; call read_source first.`)
     return found
   })
@@ -442,13 +479,52 @@ function propose(ctx: ToolContext, args: Record<string, unknown>): ToolOutcome {
   return {
     ok: true,
     summary: `Proposed: ${summary}`,
-    proposal: { summary, patch, preview, evidence },
+    proposal: { summary, patch, preview, evidence, plan },
     response: {
       status: 'awaiting developer approval',
       preview,
       note: 'Recorded. Explain the change and its evidence to the developer; do not call more tools.'
     }
   }
+}
+
+const MAX_PLAN_ITEMS = 12
+
+function planOf(value: unknown): ProposalPlan {
+  const plan = value as Record<string, unknown> | null
+  if (!plan || typeof plan !== 'object')
+    throw new ArgumentError('plan is required: behavior, steps and acceptance.')
+  const items = (field: string, required: boolean): string[] => {
+    const list = plan[field] ?? []
+    if (!Array.isArray(list) || list.some((i) => typeof i !== 'string'))
+      throw new ArgumentError(`plan.${field} must be a list of strings.`)
+    const clean = list.map((i: string) => i.trim()).filter(Boolean)
+    if (required && !clean.length) throw new ArgumentError(`plan.${field} needs at least one item.`)
+    if (clean.length > MAX_PLAN_ITEMS)
+      throw new ArgumentError(`plan.${field} has at most ${MAX_PLAN_ITEMS} items.`)
+    return clean
+  }
+  return {
+    behavior: text(plan.behavior, 'plan.behavior').trim(),
+    steps: items('steps', true),
+    preserved: items('preserved', false),
+    acceptance: items('acceptance', true),
+    files: filesOf(items('files', false))
+  }
+}
+
+const MAX_PLAN_FILES = 8
+
+/** Plain repository-relative file paths. Whether each is a file is checked against the commit at approval. */
+function filesOf(paths: string[]): string[] {
+  if (paths.length > MAX_PLAN_FILES)
+    throw new ArgumentError(`plan.files has at most ${MAX_PLAN_FILES} entries.`)
+  for (const p of paths) {
+    const parts = p.split('/')
+    if (p.startsWith('/') || p.endsWith('/') || parts.some((x) => !x || x === '.' || x === '..'))
+      throw new ArgumentError(`plan.files entry ${p} must be a repository-relative file path.`)
+  }
+  return [...new Set(paths)]
 }
 
 /**

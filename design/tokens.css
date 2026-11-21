@@ -32,6 +32,7 @@
   --dg-unresolved: var(--dg-text-3);
   --dg-unresolved-tint: rgba(147,166,171,.08);
   --dg-reject-tint: rgba(224,102,42,.10);
+  --dg-proposed-tint: rgba(242,150,43,.05);
   --dg-hatch: repeating-linear-gradient(45deg, rgba(236,232,220,.03) 0 1px, transparent 1px 6px);
   --dg-port-event: var(--dg-ok);
   --dg-node-radius: 4px;

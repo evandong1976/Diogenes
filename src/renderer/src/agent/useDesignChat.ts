@@ -275,12 +275,11 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
     setError(null)
     try {
       const result = await action(projectId)
-      if (scope.current.projectId === projectId) {
-        setHandoffs((current) => updateHandoff(current, result))
-        // The action itself succeeded; a failed refresh is shown but does not undo it.
-        await refresh().catch((e) => setError(message(e)))
-      }
-      return true
+      if (scope.current.projectId !== projectId) return false
+      setHandoffs((current) => updateHandoff(current, result))
+      // A refresh error doesn't undo a handoff that successfully started.
+      await refresh().catch((e) => setError(message(e)))
+      return scope.current.projectId === projectId
     } catch (e) {
       if (scope.current.projectId === projectId) setError(message(e))
       return false
