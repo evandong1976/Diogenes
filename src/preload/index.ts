@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { catalogChannels, type CatalogApi } from '../shared/catalog'
 import { geminiChannels, type DiogenesApi } from '../shared/gemini'
 import { indexingChannels, type IndexStatus, type IndexingApi } from '../shared/indexing'
+import { workflowChannels, type WorkflowApi } from '../shared/workflow'
 
 export type GithubUser = { login: string; name: string | null }
 export type DeviceCode = { userCode: string; verificationUri: string }
@@ -52,8 +53,23 @@ const catalog: CatalogApi = {
   preview: (patch) => ipcRenderer.invoke(catalogChannels.preview, patch)
 }
 
+const wf = workflowChannels
+const workflow: WorkflowApi = {
+  preview: (request) => invoke(wf.preview, request),
+  approve: (request) => invoke(wf.approve, request),
+  startHandoff: (approvalId) => invoke(wf.startHandoff, approvalId),
+  refresh: (handoffId) => invoke(wf.refresh, handoffId),
+  steer: (handoffId, message) => invoke(wf.steer, handoffId, message),
+  cancel: (handoffId) => invoke(wf.cancel, handoffId),
+  requestCorrection: (handoffId, request) => invoke(wf.requestCorrection, handoffId, request),
+  resolveDecision: (handoffId, option) => invoke(wf.resolveDecision, handoffId, option),
+  getHandoff: (handoffId) => invoke(wf.getHandoff, handoffId),
+  getProject: (projectId) => invoke(wf.getProject, projectId)
+}
+
 const api = {
   catalog,
+  workflow,
   gemini,
   canvas,
   indexing,

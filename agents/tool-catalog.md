@@ -43,3 +43,7 @@ These are ownership targets for teammates. Add a callable name here when its int
 | Apply approved edit | Update the canvas with a reviewed change.                              | Changes the working diagram after the user accepts the preview. |
 | Export agent brief  | Package the approved change, source references, and acceptance checks. | Produces a Markdown handoff for a coding agent.                 |
 | Verify behavior     | Run a specific acceptance check against the implementation.            | Reports the check, observed result, and pass or fail.           |
+
+## Approval, coding handoff and verification
+
+`window.api.workflow` exposes the headless workflow: `preview`, `approve`, `startHandoff`, `refresh`, `steer`, `cancel`, `requestCorrection`, `resolveDecision`, `getHandoff`, `getProject`. See [Workflow](workflow.md) for identities, lifecycle, what each service implements, and where local guarantees end. Until the coding gateway and design thread are wired in, `startHandoff` rejects and results are queryable only through `getProject`.

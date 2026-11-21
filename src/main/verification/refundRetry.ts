@@ -13,42 +13,16 @@ import { isDeepStrictEqual } from 'node:util'
 import { applyCatalogPatch, retryEventKey } from '../catalog/editing.ts'
 import type {
   CatalogGraph,
-  CatalogPatch,
   RetryAttemptNumber,
   RetryBehavior,
   RetryEffect,
   RetryEvent
 } from '../../shared/catalog'
+import type { ApprovedChange, ObligationId, Outcome } from '../../shared/workflow'
+
+export type { ApprovedChange }
 
 export const VERIFIER_ID = 'diogenes-refund-retry-verifier/1'
-
-type ObligationId = 'native-typecheck' | 'graph-conformance' | 'bend-law'
-type Outcome = 'pass' | 'fail' | 'unknown'
-
-export interface ApprovedChange {
-  version: 1
-  repository: { id: number; fullName: string }
-  /** Full SHA of the baseline commit the patch was approved against. */
-  baseCommit: string
-  catalog: { schemaVersion: number; revision: number; bindingPath: string }
-  targetComponentId: string
-  beforeDigest: string
-  patch: CatalogPatch
-  afterDigest: string
-  transitionIds: string[]
-  bindings: {
-    /** Candidate directory, relative to the repository root. */
-    root: string
-    reducer: { file: string; export: string }
-    proof: { file: string }
-    caller: { file: string; export: string }
-  }
-  obligations: { id: ObligationId; scope: string }[]
-  requiredChanges: string[]
-  preserved: string[]
-  openChoices: string[]
-  toolchain: { bendVersion: string; verifier: string; lawSourceDigest: string }
-}
 
 export interface ObligationResult {
   id: ObligationId
