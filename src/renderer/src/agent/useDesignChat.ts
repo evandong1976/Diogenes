@@ -31,6 +31,9 @@ export interface PendingSend {
 }
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
+const sortThreads = (list: ThreadSummary[]): ThreadSummary[] =>
+  [...list].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+const WAITING = 'The design draft opens from the indexed catalog. Waiting for indexing to finish.'
 const POLL_MS = 1500
 
 export interface DesignChat {
@@ -64,7 +67,7 @@ export interface DesignChat {
  */
 export function useDesignChat(projectId: string | null, indexedSha: string | null): DesignChat {
   const api = window.api.backend
-  const [load, setLoad] = useState<ProjectLoad>({ status: 'off' })
+  const [opened, setOpened] = useState<ProjectLoad>({ status: 'loading' })
   const [project, setProject] = useState<ProjectState | null>(null)
   const [threads, setThreads] = useState<ThreadSummary[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -78,10 +81,38 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
   const [attempt, setAttempt] = useState(0)
   // Drops results that arrive after the project or thread changed.
   const scope = useRef({ projectId, activeId })
-  scope.current = { projectId, activeId }
+  useEffect(() => {
+    scope.current = { projectId, activeId }
+  }, [projectId, activeId])
 
-  const sortThreads = (list: ThreadSummary[]): ThreadSummary[] =>
-    [...list].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  // A different project or snapshot starts from nothing (reset while rendering, not in an effect).
+  const projectKey = projectId && indexedSha ? `${projectId}@${indexedSha}#${attempt}` : null
+  const [shownProject, setShownProject] = useState(projectKey)
+  if (shownProject !== projectKey) {
+    setShownProject(projectKey)
+    setOpened({ status: 'loading' })
+    setProject(null)
+    setThreads([])
+    setActiveId(null)
+    setPending(null)
+    setSent({})
+    setError(null)
+    setApprovals({})
+    setFrozen([])
+  }
+  // Switching threads clears the old transcript until the new one loads.
+  const threadKey = projectId && activeId ? `${projectId}/${activeId}` : null
+  const [shownThread, setShownThread] = useState(threadKey)
+  if (shownThread !== threadKey) {
+    setShownThread(threadKey)
+    setEvents([])
+  }
+
+  const load: ProjectLoad = !projectId
+    ? { status: 'off' }
+    : !indexedSha
+      ? { status: 'waiting', message: WAITING }
+      : opened
 
   const refreshWorkflow = useCallback(
     (p: string) =>
@@ -95,34 +126,22 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
 
   // Open the draft and list threads once the repo has an indexed snapshot.
   useEffect(() => {
-    setProject(null)
-    setThreads([])
-    setActiveId(null)
-    setEvents([])
-    setPending(null)
-    setSent({})
-    setError(null)
-    setApprovals({})
-    setFrozen([])
-    if (!projectId) return setLoad({ status: 'off' })
-    if (!indexedSha)
-      return setLoad({
-        status: 'waiting',
-        message: 'The design draft opens from the indexed catalog. Waiting for indexing to finish.'
-      })
+    if (!projectId || !indexedSha) return
     let live = true
-    setLoad({ status: 'loading' })
-    Promise.all([api.design.openProject(projectId), api.threads.list(projectId, { kind: 'design' })])
+    Promise.all([
+      api.design.openProject(projectId),
+      api.threads.list(projectId, { kind: 'design' })
+    ])
       .then(([state, list]) => {
         if (!live) return
         const sorted = sortThreads(list)
         setProject(state)
         setThreads(sorted)
         setActiveId(sorted[0]?.id ?? null)
-        setLoad({ status: 'ready' })
+        setOpened({ status: 'ready' })
         void refreshWorkflow(projectId)
       })
-      .catch((e) => live && setLoad({ status: 'unavailable', message: message(e) }))
+      .catch((e) => live && setOpened({ status: 'unavailable', message: message(e) }))
     return () => {
       live = false
     }
@@ -130,7 +149,6 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
 
   // Load the open thread's transcript.
   useEffect(() => {
-    setEvents([])
     if (!projectId || !activeId) return
     let live = true
     api.threads.open(projectId, activeId).then(
@@ -241,14 +259,19 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
     },
     cancel: () => {
       const turn = activeId ? runningTurn(project, activeId) : null
-      if (projectId && turn) void guard(async () => void (await api.design.cancelTurn(projectId, turn.id)))
+      if (projectId && turn)
+        void guard(async () => void (await api.design.cancelTurn(projectId, turn.id)))
     },
     approve: (proposal) =>
       guard(async () => {
         if (!projectId || !draft) return
         setDeciding(proposal.id)
         try {
-          const result: DesignApproval = await api.design.approve(projectId, proposal.id, draft.revision)
+          const result: DesignApproval = await api.design.approve(
+            projectId,
+            proposal.id,
+            draft.revision
+          )
           const d = result.design
           setApprovals((a) => ({
             ...a,
@@ -260,7 +283,11 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
                   currentRevision: d.currentRevision
                 }
               : result.approval
-                ? { kind: 'frozen', approvalId: result.approval.approvalId, revision: d.draft.revision }
+                ? {
+                    kind: 'frozen',
+                    approvalId: result.approval.approvalId,
+                    revision: d.draft.revision
+                  }
                 : {
                     kind: 'draft-only',
                     revision: d.draft.revision,

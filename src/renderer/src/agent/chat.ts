@@ -5,6 +5,7 @@
 import type {
   DesignTurnInput,
   DraftState,
+  EvidenceRecord,
   Proposal,
   ProjectState,
   TurnRecord
@@ -156,3 +157,74 @@ export const TURN_STATUS_TONE: Record<TurnRecord['status'], 'ok' | 'warn' | 'dan
 /** Pending proposals validated against an older revision will be refused on approve. */
 export const proposalIsBehind = (proposal: Proposal, draft: DraftState | null): boolean =>
   proposal.status === 'pending' && !!draft && proposal.preview.baseRevision !== draft.revision
+
+/** Short verbs for the design harness's tools (src/main/design/tools.ts). Unknown names show as-is. */
+const TOOL_LABEL: Record<string, string> = {
+  inspect_component: 'Inspect',
+  follow_connections: 'Follow',
+  read_source: 'Read',
+  propose_graph_edit: 'Propose',
+  read_verification: 'Verify',
+  request_correction: 'Correct'
+}
+
+export interface TraceStep {
+  key: string
+  tool: string
+  label: string
+  ok: boolean
+  /** The backend's own one-line outcome, e.g. `Read src/retry.ts:12-40`. */
+  summary: string
+  /** Tool arguments as recorded, for the tooltip. */
+  args: string
+}
+
+export interface ActivityTrace {
+  /** working: the turn is in flight · done: it finished · stopped: failed, cancelled or interrupted. */
+  phase: 'working' | 'done' | 'stopped'
+  headline: string
+  steps: TraceStep[]
+  evidence: EvidenceRecord[]
+}
+
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`
+
+/**
+ * The activity a turn actually recorded: its tool calls, in order, and the source it read.
+ * `turn` is null while the send is in flight and the backend has not saved the turn yet.
+ * Nothing is inferred; a turn with no recorded activity has no steps.
+ */
+export function activityTrace(turn: TurnRecord | null): ActivityTrace {
+  const steps: TraceStep[] = (turn?.toolCalls ?? []).map((c, i) => ({
+    key: `${i}`,
+    tool: c.name,
+    label: TOOL_LABEL[c.name] ?? c.name,
+    ok: c.ok,
+    summary: c.summary,
+    args: JSON.stringify(c.args) ?? ''
+  }))
+  const evidence = turn?.evidence ?? []
+  const failed = steps.filter((s) => !s.ok).length
+  const counts = [
+    plural(steps.length, 'tool call'),
+    ...(evidence.length ? [plural(evidence.length, 'source')] : []),
+    ...(failed ? [`${failed} failed`] : [])
+  ].join(' · ')
+
+  if (!turn) return { phase: 'working', headline: 'Starting the turn…', steps, evidence }
+  if (turn.status === 'running')
+    return {
+      phase: 'working',
+      headline: steps.length ? `Working · ${counts}` : 'Working · no tool calls yet',
+      steps,
+      evidence
+    }
+  if (['failed', 'cancelled', 'interrupted'].includes(turn.status))
+    return {
+      phase: 'stopped',
+      headline: `${TURN_STATUS_LABEL[turn.status]} after ${counts}`,
+      steps,
+      evidence
+    }
+  return { phase: 'done', headline: counts, steps, evidence }
+}

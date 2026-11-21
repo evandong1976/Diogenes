@@ -206,7 +206,12 @@ function App(): React.JSX.Element {
           </main>
         )}
         {shownRepo && chatOpen && (
-          <ChatPane chat={chat} selected={selected} onClose={() => setChatOpen(false)} />
+          <ChatPane
+            chat={chat}
+            selected={selected}
+            onClose={() => setChatOpen(false)}
+            onOpenSource={setFocusFile}
+          />
         )}
         <footer className="statusbar dg-data">
           <span>

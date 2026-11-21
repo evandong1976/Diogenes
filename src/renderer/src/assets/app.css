@@ -921,15 +921,11 @@ strong.sidebar__name {
 .chat__activity summary {
   cursor: pointer;
 }
-.chat__activity ul {
-  display: flex;
-  flex-direction: column;
-  gap: var(--dg-space-2);
-  margin: var(--dg-space-3) 0;
-  overflow-wrap: anywhere;
+.chat__activity .dg-evidence-list {
+  margin-top: var(--dg-space-3);
 }
 .chat__tool {
-  color: var(--dg-text);
+  color: var(--dg-text-2);
 }
 .chat-proposal {
   display: flex;
@@ -982,4 +978,34 @@ strong.sidebar__name {
   display: flex;
   justify-content: space-between;
   gap: var(--dg-space-4);
+}
+.chat__trace {
+  margin: var(--dg-space-3) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dg-space-2);
+}
+.chat__trace li {
+  display: grid;
+  grid-template-columns: 4.5em minmax(0, 1fr);
+  gap: var(--dg-space-3);
+  overflow-wrap: anywhere;
+}
+.chat__trace li[data-ok='false'] .chat__tool {
+  color: var(--dg-danger);
+}
+.chat__waiting {
+  margin-top: var(--dg-space-3);
+  color: var(--dg-text-3);
+}
+.chat__source {
+  all: unset;
+  cursor: pointer;
+}
+.chat__source:hover,
+.chat__source:focus-visible {
+  color: var(--dg-text);
+  text-decoration: underline;
 }
