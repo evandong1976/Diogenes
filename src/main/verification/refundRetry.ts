@@ -4,6 +4,7 @@
  * the baseline commit; candidate files are only ever the thing being checked.
  */
 import { spawnSync } from 'node:child_process'
+import { minimalEnv } from './childEnv.ts'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -227,7 +228,12 @@ export function readBaselineGraph(repoDir: string, packet: ApprovedChange): Cata
 }
 
 function git(repoDir: string, args: string[]): string {
-  const r = spawnSync('git', args, { cwd: repoDir, encoding: 'utf8', maxBuffer: 1 << 26 })
+  const r = spawnSync('git', args, {
+    cwd: repoDir,
+    env: minimalEnv(),
+    encoding: 'utf8',
+    maxBuffer: 1 << 26
+  })
   if (r.status !== 0) throw new InvalidRun(`git ${args.join(' ')}: ${r.stderr.trim()}`)
   return r.stdout
 }
@@ -252,7 +258,8 @@ function approvedBehavior(
     'git',
     ['merge-base', '--is-ancestor', packet.baseCommit, candidateSha],
     {
-      cwd: repoDir
+      cwd: repoDir,
+      env: minimalEnv()
     }
   )
   if (ancestor.status !== 0)
@@ -328,7 +335,7 @@ export function verifyRefundRetry(options: {
       workspace
     }
     const committedDomain = extractCandidate(options.repoDir, ctx)
-    const bendVersion = spawnSync(options.bend, ['version'], { encoding: 'utf8' }).stdout?.trim()
+    const bendVersion = spawnSync(options.bend, ['version'], { env: bendEnv(), encoding: 'utf8' }).stdout?.trim()
     const bendIssue =
       bendVersion === packet.toolchain.bendVersion
         ? undefined
@@ -391,9 +398,10 @@ function extractCandidate(repoDir: string, ctx: Context): string | undefined {
   mkdirSync(src(ctx), { recursive: true })
   const tar = spawnSync('git', ['archive', '--format=tar', tree], {
     cwd: repoDir,
+    env: minimalEnv(),
     maxBuffer: 1 << 26
   })
-  const untar = spawnSync('tar', ['-x', '-C', src(ctx)], { input: tar.stdout })
+  const untar = spawnSync('tar', ['-x', '-C', src(ctx)], { env: minimalEnv(), input: tar.stdout })
   if (tar.status !== 0 || untar.status !== 0) throw new InvalidRun(`Could not extract ${tree}`)
   const domain = src(ctx, 'domain.bend')
   const committed = existsSync(domain) ? readFileSync(domain, 'utf8') : undefined
@@ -428,6 +436,7 @@ function typecheck(ctx: Context): ObligationResult {
   const command = 'tsc -p tsconfig.verify.json --pretty false'
   const r = spawnSync(process.execPath, [tsc, ...command.split(' ').slice(1)], {
     cwd: ctx.workspace,
+    env: minimalEnv(),
     encoding: 'utf8',
     timeout: TIMEOUT.tool
   })
@@ -481,6 +490,7 @@ function conformance(
   mkdirSync(out(ctx), { recursive: true })
   const compiled = spawnSync(ctx.bend, [reducer.file, '-o', out(ctx, 'compiled-reducer.mjs')], {
     cwd: src(ctx),
+    env: bendEnv(),
     encoding: 'utf8',
     timeout: TIMEOUT.tool
   })
@@ -621,6 +631,8 @@ writeFileSync('driver-output.json', JSON.stringify(result))
   )
   const r = spawnSync(process.execPath, ['driver.mjs'], {
     cwd: ctx.workspace,
+    // The driver imports the candidate's caller: it gets no inherited variables at all.
+    env: minimalEnv(),
     encoding: 'utf8',
     timeout: TIMEOUT.driver
   })
@@ -651,6 +663,7 @@ function law(ctx: Context, bendIssue: string | undefined): ObligationResult {
     return done('fail', `Candidate has no ${proof.file}; the law stays open`)
   const r = spawnSync(ctx.bend, [proof.file, '--verdict'], {
     cwd: src(ctx),
+    env: bendEnv(),
     encoding: 'utf8',
     timeout: TIMEOUT.verdict
   })
@@ -665,3 +678,6 @@ function law(ctx: Context, bendIssue: string | undefined): ObligationResult {
 
 /** The pinned Bend binary: $DIOGENES_BEND, or `bend` on PATH. */
 export const pinnedBend = (): string => process.env.DIOGENES_BEND ?? 'bend'
+
+/** Bend needs only the BendTT kernel location on top of the minimal environment. */
+const bendEnv = (): NodeJS.ProcessEnv => minimalEnv({ BENDTT: process.env.BENDTT })

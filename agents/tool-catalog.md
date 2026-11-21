@@ -88,11 +88,11 @@ These are ownership targets for teammates. Add a callable name here when its int
 
 ## Approval, coding handoff and verification
 
-`window.api.workflow` exposes the headless workflow: `preview`, `approve`, `startHandoff`, `refresh`, `steer`, `cancel`, `requestCorrection`, `resolveDecision`, `getHandoff`, `getProject`. See [Workflow](workflow.md) for identities, lifecycle, what each service implements, and where local guarantees end. Until the coding gateway and design thread are wired in, `startHandoff` rejects and results are queryable only through `getProject`.
+`window.api.backend` exposes threads, design turns, approval, the workflow and coding runs. Every call takes `projectId` first: `workflow.preview`, `getProject`, `startHandoff`, `refresh`, `steer`, `cancel`, `requestCorrection`, `resolveDecision`, `getHandoff`, `verdicts`. Approval goes through `design.approve`. See [Persistence](persistence.md) for wiring and storage, and [Workflow](workflow.md) for identities, lifecycle and where local guarantees end.
 
 ## Project threads (main process)
 
-`ThreadStore` in [src/main/threads/store.ts](../src/main/threads/store.ts) keeps design and coding conversations so a project can be reopened after a restart. Types are in [src/shared/threads.ts](../src/shared/threads.ts). It is not on the preload bridge yet. Services in `src/main` call it directly, and the shared app wiring (IPC, `<userData>/threads` root, single-instance lock) is pending.
+`ThreadStore` in [src/main/threads/store.ts](../src/main/threads/store.ts) keeps design and coding conversations so a project can be reopened after a restart. Types are in [src/shared/threads.ts](../src/shared/threads.ts). `PgThreadStore` implements the same `ThreadRepository` contract in Postgres (see [Persistence](persistence.md)). The renderer reads threads through `window.api.backend.threads`, scoped by project.
 
 | Call                                                        | Return            | Effect                                                                                                                    |
 | ----------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------- |

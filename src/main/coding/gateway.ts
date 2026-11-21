@@ -24,13 +24,13 @@ import {
   type ManagedAgentProvider,
   type ProviderInteraction
 } from './provider'
-import type { CodingRunStore } from './store'
+import type { CodingRunRepository } from './store'
 
 const activityLimit = 200
 const textLimit = 4_000
 
 export interface GatewayOptions {
-  store: CodingRunStore
+  store: CodingRunRepository
   provider: ManagedAgentProvider
   /** Source of `export-candidate.mjs`, staged into every new workspace. */
   exportScript: string

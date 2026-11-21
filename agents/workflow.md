@@ -1,6 +1,6 @@
 # Approval → coding → verification workflow
 
-Contract: [src/shared/workflow.ts](../src/shared/workflow.ts). Service: [src/main/workflow/service.ts](../src/main/workflow/service.ts). Bridge: `window.api.workflow`.
+Contract: [src/shared/workflow.ts](../src/shared/workflow.ts). Service: [src/main/workflow/service.ts](../src/main/workflow/service.ts). Bridge: `window.api.workflow` (project-scoped, see [Persistence](persistence.md)).
 
 ## Identities
 
@@ -33,10 +33,10 @@ Approving the same proposal twice returns the same approval.
 - A `fail` with no attempts left, any `unknown`, a rejected candidate, or a failed run moves it to `needs-decision`.
 - `refresh(handoffId)` advances one step. Call it after a restart to resume runs that were in flight.
 
-State lives in `<userData>/workflow/`:
+State lives in Postgres when `DIOGENES_DATABASE_URL` is set (see [Persistence](persistence.md)). Otherwise it is in `<userData>/backend/workflow/`:
 
 - `state.json`
-- `approvals/<approvalId>.json`: the exact packet bytes
+- `approvals/<approvalId>.json`: the exact packet bytes (with a database, a verified cache of them)
 - `candidates/<projectId>.git`: a bare repo that borrows the project's objects through git alternates and pins candidates under `refs/candidates/`
 
 ## Local obligations (refund retry verifier)

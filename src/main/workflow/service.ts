@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { ApprovalError, freezeApproval, previewProposal } from './approval.ts'
 import { codingBrief } from './brief.ts'
 import { CandidateRepo } from './candidates.ts'
-import { WorkflowStore } from './store.ts'
+import { WorkflowStore, type WorkflowRepository } from './store.ts'
 import { mismatchesOf, toVerdict, unsupportedVerdict, type LocalVerifier } from './verifiers.ts'
 import type { CatalogPatchResult, RetryBehavior } from '../../shared/catalog'
 import type {
@@ -29,7 +29,10 @@ import type {
 } from '../../shared/workflow'
 
 export interface WorkflowDeps {
+  /** Local working directory: candidate repositories, and the file store when `store` is absent. */
   storeDir: string
+  /** Durable state. Defaults to the file store under `storeDir`. */
+  store?: WorkflowRepository
   /** Local git repository for a project. It must contain the approved base commit. */
   repoFor(projectId: string): string
   gateway: CodingGateway
@@ -42,11 +45,11 @@ export interface WorkflowDeps {
 export class WorkflowError extends Error {}
 
 export class WorkflowService implements WorkflowApi {
-  private readonly store: WorkflowStore
+  private readonly store: WorkflowRepository
   private readonly locks = new Map<string, Promise<unknown>>()
 
   constructor(private readonly deps: WorkflowDeps) {
-    this.store = new WorkflowStore(deps.storeDir)
+    this.store = deps.store ?? new WorkflowStore(deps.storeDir)
   }
 
   private now(): string {
@@ -66,9 +69,8 @@ export class WorkflowService implements WorkflowApi {
       if (error instanceof ApprovalError) throw new WorkflowError(error.message)
       throw error
     }
-    const existing = this.store.approval(frozen.approvalId)
+    const existing = await this.store.approval(frozen.approvalId)
     if (existing) return existing
-    this.store.writePacket(frozen.approvalId, frozen.bytes)
     const record: ApprovalRecord = {
       approvalId: frozen.approvalId,
       correlation: request.correlation,
@@ -76,12 +78,11 @@ export class WorkflowService implements WorkflowApi {
       approvedBy: request.approvedBy,
       packet: frozen.packet
     }
-    this.store.putApproval(record)
-    return record
+    return this.store.putApproval(record, frozen.bytes)
   }
 
   async startHandoff(approvalId: string): Promise<HandoffRecord> {
-    const approval = this.store.approval(approvalId)
+    const approval = await this.store.approval(approvalId)
     if (!approval) throw new WorkflowError(`Unknown approval ${approvalId}`)
     const now = this.now()
     const handoff: HandoffRecord = {
@@ -100,7 +101,7 @@ export class WorkflowService implements WorkflowApi {
 
   refresh(handoffId: string): Promise<HandoffRecord> {
     return this.locked(handoffId, async () => {
-      const h = this.require(handoffId)
+      const h = await this.require(handoffId)
       await this.redeliver(h)
       const run = h.runs.at(-1)!
       if (h.stage === 'coding') {
@@ -125,7 +126,7 @@ export class WorkflowService implements WorkflowApi {
 
   steer(handoffId: string, message: string): Promise<HandoffRecord> {
     return this.locked(handoffId, async () => {
-      const h = this.requireStage(handoffId, 'coding')
+      const h = await this.requireStage(handoffId, 'coding')
       const run = h.runs.at(-1)!
       run.run = await this.deps.gateway.steer(run.run.runId, message)
       return this.save(h)
@@ -134,7 +135,7 @@ export class WorkflowService implements WorkflowApi {
 
   cancel(handoffId: string): Promise<HandoffRecord> {
     return this.locked(handoffId, async () => {
-      const h = this.requireStage(handoffId, 'coding')
+      const h = await this.requireStage(handoffId, 'coding')
       const run = h.runs.at(-1)!
       run.run = await this.deps.gateway.cancel(run.run.runId)
       return this.decide(h, 'run-failed', 'Cancelled by the developer', [
@@ -150,7 +151,7 @@ export class WorkflowService implements WorkflowApi {
     request: Pick<CorrectionRequest, 'obligationIds' | 'instructions'>
   ): Promise<HandoffRecord> {
     return this.locked(handoffId, async () => {
-      const h = this.requireStage(handoffId, 'correctable')
+      const h = await this.requireStage(handoffId, 'correctable')
       const last = h.runs.at(-1)!
       const verdict = last.verdict!
       const failing = verdict.obligations.filter((o) => o.outcome === 'fail').map((o) => o.id)
@@ -162,7 +163,7 @@ export class WorkflowService implements WorkflowApi {
           `A correction must name failing obligations of candidate ${verdict.candidateId}: ${failing.join(', ')}`
         )
       if (!request.instructions.trim()) throw new WorkflowError('A correction needs instructions')
-      const mismatches = mismatchesOf(verdict, this.behavior(h)).filter((m) =>
+      const mismatches = mismatchesOf(verdict, await this.behavior(h)).filter((m) =>
         request.obligationIds.includes(m.obligationId)
       )
       return this.submitRun(h, {
@@ -176,7 +177,7 @@ export class WorkflowService implements WorkflowApi {
 
   resolveDecision(handoffId: string, option: DecisionOption): Promise<HandoffRecord> {
     return this.locked(handoffId, async () => {
-      const h = this.requireStage(handoffId, 'needs-decision')
+      const h = await this.requireStage(handoffId, 'needs-decision')
       if (!h.decision!.options.includes(option))
         throw new WorkflowError(`${option} is not offered: ${h.decision!.options.join(', ')}`)
       const last = h.runs.at(-1)!
@@ -185,7 +186,7 @@ export class WorkflowService implements WorkflowApi {
         case 'reverify':
           if (!last.candidate) throw new WorkflowError('There is no candidate to verify again')
           h.stage = 'verifying'
-          return this.verify(this.save(h), last)
+          return this.verify(await this.save(h), last)
         case 'retry-run':
           return this.submitRun(h)
         case 'revise-design':
@@ -197,16 +198,14 @@ export class WorkflowService implements WorkflowApi {
   }
 
   async getHandoff(handoffId: string): Promise<HandoffRecord | null> {
-    return this.store.handoff(handoffId) ?? null
+    return (await this.store.handoff(handoffId)) ?? null
   }
 
   async getProject(projectId: string): Promise<ProjectWorkflowState> {
-    const mine = <T extends { correlation: { projectId: string } }>(items: T[]): T[] =>
-      items.filter((i) => i.correlation.projectId === projectId)
     return {
       projectId,
-      approvals: mine(this.store.approvals()),
-      handoffs: mine(this.store.handoffs()).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      approvals: await this.store.projectApprovals(projectId),
+      handoffs: await this.store.projectHandoffs(projectId)
     }
   }
 
@@ -218,7 +217,7 @@ export class WorkflowService implements WorkflowApi {
   ): Promise<HandoffRecord> {
     if (h.runs.length >= h.maxAttempts)
       throw new WorkflowError(`Handoff ${h.handoffId} used all ${h.maxAttempts} attempts`)
-    const { packet } = this.store.approval(h.approvalId)!
+    const { packet } = (await this.store.approval(h.approvalId))!
     const attempt = h.runs.length + 1
     const handoff: CodingHandoff = {
       handoffId: h.handoffId,
@@ -237,7 +236,7 @@ export class WorkflowService implements WorkflowApi {
       throw new WorkflowError(`Gateway run ${run.runId} does not echo the handoff identity`)
     h.runs.push({ attempt, run, ...(correction && { correction }) })
     h.stage = 'coding'
-    this.save(h)
+    await this.save(h)
     await this.post(h, {
       kind: 'run',
       handoffId: h.handoffId,
@@ -248,7 +247,7 @@ export class WorkflowService implements WorkflowApi {
   }
 
   private async collect(h: HandoffRecord, run: RunRecord): Promise<HandoffRecord> {
-    const { packet } = this.store.approval(h.approvalId)!
+    const { packet } = (await this.store.approval(h.approvalId))!
     const bundle = await this.deps.gateway.retrieveCandidate(run.run.runId)
     const repo = this.candidates(h)
     const problem = repo.check(bundle, {
@@ -271,11 +270,11 @@ export class WorkflowService implements WorkflowApi {
       ...(bundle.remoteClaim && { remoteClaim: bundle.remoteClaim })
     }
     h.stage = 'verifying'
-    return this.verify(this.save(h), run)
+    return this.verify(await this.save(h), run)
   }
 
   private async verify(h: HandoffRecord, run: RunRecord): Promise<HandoffRecord> {
-    const { packet } = this.store.approval(h.approvalId)!
+    const { packet } = (await this.store.approval(h.approvalId))!
     const candidate = run.candidate!
     const ctx = {
       approvalId: h.approvalId,
@@ -291,7 +290,7 @@ export class WorkflowService implements WorkflowApi {
           packet,
           verifier.verify({
             repoDir: this.candidates(h).dir,
-            packetPath: this.store.packetPath(h.approvalId),
+            packetPath: await this.store.packetFile(h.approvalId),
             trustedDigest: h.approvalId,
             candidate: candidate.candidateId
           }),
@@ -308,7 +307,7 @@ export class WorkflowService implements WorkflowApi {
         : failing.length && attemptsLeft > 0
           ? 'correctable'
           : 'needs-decision'
-    this.save(h)
+    await this.save(h)
     await this.post(h, {
       kind: 'verdict',
       handoffId: h.handoffId,
@@ -317,7 +316,7 @@ export class WorkflowService implements WorkflowApi {
       runId: candidate.runId,
       attempt: run.attempt,
       verdict,
-      mismatches: mismatchesOf(verdict, this.behavior(h)),
+      mismatches: mismatchesOf(verdict, await this.behavior(h)),
       ...(h.stage === 'correctable' && { correctable: { obligationIds: failing, attemptsLeft } })
     })
     if (h.stage !== 'needs-decision') return h
@@ -360,28 +359,28 @@ export class WorkflowService implements WorkflowApi {
       options: options.filter((o) => o !== 'retry-run' || attemptsLeft)
     }
     h.stage = 'needs-decision'
-    this.save(h)
+    await this.save(h)
     await this.post(h, h.decision)
     return h
   }
 
   private async post(h: HandoffRecord, message: ThreadMessage): Promise<void> {
     try {
-      await this.deps.threads.post(h.correlation.threadId, message)
+      await this.deps.threads.post(h.correlation.threadId, message, h.correlation)
     } catch {
       h.undelivered.push(message)
-      this.save(h)
+      await this.save(h)
     }
   }
 
   private async redeliver(h: HandoffRecord): Promise<void> {
     const pending = h.undelivered.splice(0)
     for (const message of pending) await this.post(h, message)
-    if (pending.length) this.save(h)
+    if (pending.length) await this.save(h)
   }
 
-  private behavior(h: HandoffRecord): RetryBehavior {
-    const op = this.store.approval(h.approvalId)!.packet.patch.operations[0]
+  private async behavior(h: HandoffRecord): Promise<RetryBehavior> {
+    const op = (await this.store.approval(h.approvalId))!.packet.patch.operations[0]
     if (op.type !== 'update' || op.node.kind !== 'stateMachine' || !op.node.properties.behavior)
       throw new WorkflowError('Approval has no state machine behavior')
     return op.node.properties.behavior
@@ -397,20 +396,23 @@ export class WorkflowService implements WorkflowApi {
     return repo
   }
 
-  private save(h: HandoffRecord): HandoffRecord {
+  private async save(h: HandoffRecord): Promise<HandoffRecord> {
     h.updatedAt = this.now()
-    this.store.putHandoff(h)
+    await this.store.putHandoff(h)
     return h
   }
 
-  private require(handoffId: string): HandoffRecord {
-    const h = this.store.handoff(handoffId)
+  private async require(handoffId: string): Promise<HandoffRecord> {
+    const h = await this.store.handoff(handoffId)
     if (!h) throw new WorkflowError(`Unknown handoff ${handoffId}`)
     return h
   }
 
-  private requireStage(handoffId: string, stage: HandoffRecord['stage']): HandoffRecord {
-    const h = this.require(handoffId)
+  private async requireStage(
+    handoffId: string,
+    stage: HandoffRecord['stage']
+  ): Promise<HandoffRecord> {
+    const h = await this.require(handoffId)
     if (h.stage !== stage)
       throw new WorkflowError(`Handoff ${handoffId} is ${h.stage}, not ${stage}`)
     return h

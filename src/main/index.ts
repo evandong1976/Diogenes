@@ -5,7 +5,7 @@ import icon from '../../resources/icon.png?asset'
 import { registerGithubIpc } from './github'
 import { registerGeminiHandlers } from './gemini/ipc'
 import { registerIndexingIpc } from './indexing/ipc'
-import { registerWorkflowIpc } from './workflow/ipc'
+import { registerBackendIpc } from './backend/ipc'
 
 function createWindow(): void {
   // Create the browser window.
@@ -56,7 +56,8 @@ app.whenReady().then(() => {
   registerGithubIpc()
   registerGeminiHandlers()
   registerIndexingIpc()
-  registerWorkflowIpc()
+  // Threads, design, approvals, coding runs and verdicts. Fails closed if storage is unavailable.
+  void registerBackendIpc().catch(() => undefined)
   createWindow()
 
   app.on('activate', function () {

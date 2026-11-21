@@ -36,11 +36,31 @@ type ThreadFile = {
 
 type Clock = { now: () => Date; newId: () => string }
 
-const PROJECT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
-const THREAD = /^thr_[A-Za-z0-9-]{1,64}$/
+export const PROJECT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
+export const THREAD_ID = /^thr_[A-Za-z0-9-]{1,64}$/
 const EVENT = /^[A-Za-z0-9._:-]{1,128}$/
-const KINDS: readonly ThreadKind[] = ['design', 'coding']
+export const KINDS: readonly ThreadKind[] = ['design', 'coding']
 const STATUSES = ['none', 'active', 'expired', 'failed', 'ended'] as const
+
+/** What services need from a thread store. `ThreadStore` (files) and `PgThreadStore` implement it. */
+export interface ThreadRepository {
+  subscribe(listener: (change: ThreadChange) => void): () => void
+  create(projectId: ProjectId, input: CreateThreadInput): Promise<ThreadSummary>
+  list(projectId: ProjectId, filter?: { kind?: ThreadKind }): Promise<ThreadSummary[]>
+  open(projectId: ProjectId, threadId: ThreadId): Promise<ThreadSnapshot>
+  eventsSince(projectId: ProjectId, threadId: ThreadId, afterSeq: number): Promise<ThreadEvent[]>
+  append(
+    projectId: ProjectId,
+    threadId: ThreadId,
+    input: ThreadEventInput | ThreadEventInput[],
+    options?: AppendOptions
+  ): Promise<AppendResult>
+  setProvider(
+    projectId: ProjectId,
+    threadId: ThreadId,
+    state: Omit<ThreadProviderState, 'updatedAt'> | null
+  ): Promise<ThreadSummary>
+}
 
 /**
  * Durable, project-scoped thread history. One JSON file per thread:
@@ -51,7 +71,7 @@ const STATUSES = ['none', 'active', 'expired', 'failed', 'ended'] as const
  * next complete version. Mutations to the same thread are serialized in-process; use one
  * store per userData directory (the app holds Electron's single-instance lock).
  */
-export class ThreadStore {
+export class ThreadStore implements ThreadRepository {
   private readonly queues = new Map<string, Promise<unknown>>()
   private readonly listeners = new Set<(change: ThreadChange) => void>()
   private readonly clock: Clock
@@ -109,7 +129,7 @@ export class ThreadStore {
     const names = await readdir(dir).catch(() => [] as string[])
     const files = await Promise.all(
       names
-        .filter((n) => n.endsWith('.json') && THREAD.test(n.slice(0, -5)))
+        .filter((n) => n.endsWith('.json') && THREAD_ID.test(n.slice(0, -5)))
         .map((n) => readThread(join(dir, n)))
     )
     return files
@@ -245,13 +265,13 @@ export class ThreadStore {
   }
 
   private projectDir(projectId: ProjectId): string {
-    if (typeof projectId !== 'string' || !PROJECT.test(projectId))
+    if (typeof projectId !== 'string' || !PROJECT_ID.test(projectId))
       throw invalid('Invalid project ID.')
     return join(this.root, projectId)
   }
 
   private threadPath(projectId: ProjectId, threadId: ThreadId): string {
-    if (typeof threadId !== 'string' || !THREAD.test(threadId)) throw invalid('Invalid thread ID.')
+    if (typeof threadId !== 'string' || !THREAD_ID.test(threadId)) throw invalid('Invalid thread ID.')
     return join(this.projectDir(projectId), `${threadId}.json`)
   }
 }
@@ -260,7 +280,7 @@ function summarize(projectId: ProjectId, file: ThreadFile): ThreadSummary {
   return { projectId, ...file.thread, lastSeq: file.events.length }
 }
 
-function invalid(message: string): ThreadStoreError {
+export function invalid(message: string): ThreadStoreError {
   return new ThreadStoreError('invalid', message)
 }
 
@@ -270,14 +290,14 @@ function content(event: ThreadEventInput | ThreadEvent): Record<string, unknown>
   return rest
 }
 
-function sameContent(stored: ThreadEvent, input: ThreadEventInput): boolean {
+export function sameContent(stored: ThreadEvent, input: ThreadEventInput): boolean {
   return isDeepStrictEqual(content(stored), content(input))
 }
 
 const isText = (v: unknown, max = 200_000): v is string => typeof v === 'string' && v.length <= max
 
 /** Checks shape at the boundary; inputs may arrive over IPC. Returns a JSON-clean copy. */
-function validateEvent(input: ThreadEventInput): ThreadEventInput {
+export function validateEvent(input: ThreadEventInput): ThreadEventInput {
   if (!input || typeof input !== 'object') throw invalid('Event must be an object.')
   if (input.id !== undefined && !(typeof input.id === 'string' && EVENT.test(input.id))) {
     throw invalid('Event ID must be 1–128 characters of [A-Za-z0-9._:-].')
@@ -343,7 +363,7 @@ function validRef(ref: WorkRef): boolean {
   }
 }
 
-function validateProvider(
+export function validateProvider(
   state: Omit<ThreadProviderState, 'updatedAt'>,
   now: Date
 ): ThreadProviderState {

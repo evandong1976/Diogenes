@@ -6,6 +6,7 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, posix, resolve } from 'node:path'
 import { git } from './approval.ts'
+import { minimalEnv } from '../verification/childEnv.ts'
 import type { CandidateBundle, CodingHandoff } from '../../shared/workflow'
 
 export class CandidateRepo {
@@ -49,14 +50,13 @@ export class CandidateRepo {
   materialize(bundle: CandidateBundle, attempt: number): string {
     this.ensure()
     const tmp = mkdtempSync(join(this.dir, 'index-'))
-    const env = {
-      ...process.env,
+    const env = minimalEnv({
       GIT_INDEX_FILE: join(tmp, 'index'),
       GIT_AUTHOR_NAME: 'Diogenes candidate',
       GIT_AUTHOR_EMAIL: 'candidate@diogenes.invalid',
       GIT_COMMITTER_NAME: 'Diogenes candidate',
       GIT_COMMITTER_EMAIL: 'candidate@diogenes.invalid'
-    }
+    })
     const run = (args: string[], input?: string): string => git(this.dir, args, input, env).trim()
     try {
       run(['read-tree', bundle.baseCommit])

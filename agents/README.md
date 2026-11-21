@@ -5,6 +5,7 @@ Start here when adding an agent tool or integrating the canvas with the backend.
 - [Tool catalog](tool-catalog.md) lists callable tools, inputs, outputs, and the next proposed additions.
 - [Approval → coding → verification workflow](workflow.md) defines the shared interfaces for approvals, runs, candidates and verdicts.
 - [Workflow and handoffs](handoffs.md) shows what each teammate can build against and how to check the full demo.
+- [Integrated backend and persistence](persistence.md) covers the project-scoped bridge, authorization, Postgres storage and the smoke check.
 - [Gemini contracts](../src/shared/gemini.ts) define the types and IPC channels shared by main, preload, and renderer.
 - [Background-job examples](../fixtures/background-job/example.json) provide sample graph, edit, and clarification responses for development without live API calls.
 

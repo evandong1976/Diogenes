@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process'
 import { posix } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { applyCatalogPatch, retryEventKey } from '../catalog/editing.ts'
+import { minimalEnv } from '../verification/childEnv.ts'
 import {
   VERIFIER_ID,
   lawSourceDigest,
@@ -199,7 +200,12 @@ function sourceContext(repoDir: string, base: string, root: string): SourceConte
     })
 }
 
-export function git(cwd: string, args: string[], input?: string, env?: NodeJS.ProcessEnv): string {
+export function git(
+  cwd: string,
+  args: string[],
+  input?: string,
+  env: NodeJS.ProcessEnv = minimalEnv()
+): string {
   const r = spawnSync('git', args, { cwd, input, env, encoding: 'utf8', maxBuffer: 1 << 26 })
   if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr.trim()}`)
   return r.stdout

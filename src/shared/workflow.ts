@@ -228,7 +228,8 @@ export type DecisionOption = 'reverify' | 'revise-design' | 'retry-run' | 'close
 
 /** Design thread service (Session 1). The workflow posts results here. */
 export interface DesignThreadSink {
-  post(threadId: string, message: ThreadMessage): Promise<void>
+  /** `correlation` names the project the thread belongs to. */
+  post(threadId: string, message: ThreadMessage, correlation: WorkflowCorrelation): Promise<void>
 }
 
 export interface CorrectionRequest {
@@ -288,7 +289,10 @@ export interface PresentationContext {
   selectedComponentId?: string
 }
 
-/** Headless command and query surface. The IPC bridge exposes the same operations. */
+/**
+ * Headless command and query surface of `WorkflowService`. The IPC bridge exposes it project-scoped
+ * through `BackendApi.workflow` (src/shared/backend.ts).
+ */
 export interface WorkflowApi {
   preview(request: Pick<ApprovalRequest, 'baseline' | 'patch'>): Promise<CatalogPatchResult>
   approve(request: ApprovalRequest): Promise<ApprovalRecord>
@@ -304,16 +308,3 @@ export interface WorkflowApi {
   getHandoff(handoffId: string): Promise<HandoffRecord | null>
   getProject(projectId: string): Promise<ProjectWorkflowState>
 }
-
-export const workflowChannels = {
-  preview: 'workflow:preview',
-  approve: 'workflow:approve',
-  startHandoff: 'workflow:startHandoff',
-  refresh: 'workflow:refresh',
-  steer: 'workflow:steer',
-  cancel: 'workflow:cancel',
-  requestCorrection: 'workflow:requestCorrection',
-  resolveDecision: 'workflow:resolveDecision',
-  getHandoff: 'workflow:getHandoff',
-  getProject: 'workflow:getProject'
-} as const

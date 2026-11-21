@@ -23,7 +23,7 @@ export type SourceReader = (
 
 /** Verification results for approved intents, owned by the coding/verification service. */
 export interface VerificationSource {
-  latest(intentId: string): Promise<VerificationReport | null>
+  latest(intentId: string, projectId: string): Promise<VerificationReport | null>
 }
 
 /** What a tool sees: the draft pinned at turn start, plus ledgers the harness keeps. */
@@ -552,7 +552,7 @@ async function readVerification(
   args: Record<string, unknown>
 ): Promise<ToolOutcome> {
   const intent = pickIntent(ctx, args.intentId)
-  const report = await ctx.verification.latest(intent.id)
+  const report = await ctx.verification.latest(intent.id, intent.projectId)
   if (!report)
     return {
       ok: true,
@@ -573,8 +573,11 @@ async function requestCorrection(
 ): Promise<ToolOutcome> {
   const intent = pickIntent(ctx, text(args.intentId, 'intentId'))
   const instructions = text(args.instructions, 'instructions')
-  const report = await ctx.verification.latest(intent.id)
-  const failedChecks = report?.checks.filter((c) => !c.passed).map((c) => c.name) ?? []
+  const report = await ctx.verification.latest(intent.id, intent.projectId)
+  // Only checks that ran and failed can be corrected; an unknown result needs evidence, not code.
+  const failedChecks =
+    report?.checks.filter((c) => (c.outcome ? c.outcome === 'fail' : !c.passed)).map((c) => c.name) ??
+    []
   if (!report || report.status === 'passed' || !failedChecks.length)
     return failure(`Intent ${intent.id} has no failed verification to correct.`)
   return {

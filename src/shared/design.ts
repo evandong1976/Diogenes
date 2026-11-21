@@ -141,6 +141,8 @@ export interface ApprovedIntent {
   evidence: EvidenceRecord[]
   /** Source locations of every affected component and connection in the approved draft. */
   sources: { entityId: string; sources: CatalogSource[] }[]
+  /** The draft graph at `fromRevision`, which the approval was made against. */
+  baseGraph?: CatalogGraph
   approvedAt: string
 }
 
@@ -148,8 +150,10 @@ export interface ApprovedIntent {
 export interface VerificationReport {
   intentId: string
   runId: string
-  status: 'passed' | 'failed' | 'error'
-  checks: { name: string; passed: boolean; detail?: string }[]
+  /** `unknown`: a required check could not reach a verdict (for example its tool is unavailable). */
+  status: 'passed' | 'failed' | 'unknown' | 'error'
+  /** `outcome` distinguishes a check that failed from one that could not run. */
+  checks: { name: string; passed: boolean; outcome?: 'pass' | 'fail' | 'unknown'; detail?: string }[]
   diff?: string
   at: string
 }

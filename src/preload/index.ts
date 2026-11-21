@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { catalogChannels, type CatalogApi } from '../shared/catalog'
 import { geminiChannels, type DiogenesApi } from '../shared/gemini'
 import { indexingChannels, type IndexStatus, type IndexingApi } from '../shared/indexing'
-import { workflowChannels, type WorkflowApi } from '../shared/workflow'
+import { backendChannels, type BackendApi } from '../shared/backend'
 
 export type GithubUser = { login: string; name: string | null }
 export type DeviceCode = { userCode: string; verificationUri: string }
@@ -53,23 +53,53 @@ const catalog: CatalogApi = {
   preview: (patch) => ipcRenderer.invoke(catalogChannels.preview, patch)
 }
 
-const wf = workflowChannels
-const workflow: WorkflowApi = {
-  preview: (request) => invoke(wf.preview, request),
-  approve: (request) => invoke(wf.approve, request),
-  startHandoff: (approvalId) => invoke(wf.startHandoff, approvalId),
-  refresh: (handoffId) => invoke(wf.refresh, handoffId),
-  steer: (handoffId, message) => invoke(wf.steer, handoffId, message),
-  cancel: (handoffId) => invoke(wf.cancel, handoffId),
-  requestCorrection: (handoffId, request) => invoke(wf.requestCorrection, handoffId, request),
-  resolveDecision: (handoffId, option) => invoke(wf.resolveDecision, handoffId, option),
-  getHandoff: (handoffId) => invoke(wf.getHandoff, handoffId),
-  getProject: (projectId) => invoke(wf.getProject, projectId)
+// Project-scoped agent backend. Every call names the project; the main process checks GitHub
+// access to it and resolves every other ID inside it.
+const b = backendChannels
+const backend: BackendApi = {
+  status: () => invoke(b.status),
+  threads: {
+    create: (projectId, input) => invoke(b.threadsCreate, projectId, input),
+    list: (projectId, filter) => invoke(b.threadsList, projectId, filter),
+    open: (projectId, threadId) => invoke(b.threadsOpen, projectId, threadId),
+    eventsSince: (projectId, threadId, afterSeq) =>
+      invoke(b.threadsEventsSince, projectId, threadId, afterSeq)
+  },
+  design: {
+    openProject: (projectId) => invoke(b.designOpenProject, projectId),
+    getProject: (projectId) => invoke(b.designGetProject, projectId),
+    startTurn: (input) => invoke(b.designStartTurn, input),
+    cancelTurn: (projectId, turnId) => invoke(b.designCancelTurn, projectId, turnId),
+    reject: (projectId, proposalId, reason) => invoke(b.designReject, projectId, proposalId, reason),
+    approve: (projectId, proposalId, expectedRevision) =>
+      invoke(b.designApprove, projectId, proposalId, expectedRevision)
+  },
+  workflow: {
+    preview: (request) => invoke(b.workflowPreview, request),
+    getProject: (projectId) => invoke(b.workflowGetProject, projectId),
+    startHandoff: (projectId, approvalId) => invoke(b.workflowStartHandoff, projectId, approvalId),
+    getHandoff: (projectId, handoffId) => invoke(b.workflowGetHandoff, projectId, handoffId),
+    refresh: (projectId, handoffId) => invoke(b.workflowRefresh, projectId, handoffId),
+    steer: (projectId, handoffId, message) =>
+      invoke(b.workflowSteer, projectId, handoffId, message),
+    cancel: (projectId, handoffId) => invoke(b.workflowCancel, projectId, handoffId),
+    requestCorrection: (projectId, handoffId, request) =>
+      invoke(b.workflowRequestCorrection, projectId, handoffId, request),
+    resolveDecision: (projectId, handoffId, option) =>
+      invoke(b.workflowResolveDecision, projectId, handoffId, option),
+    verdicts: (projectId, handoffId) => invoke(b.workflowVerdicts, projectId, handoffId)
+  },
+  coding: {
+    list: (projectId) => invoke(b.codingList, projectId),
+    status: (projectId, runId) => invoke(b.codingStatus, projectId, runId),
+    retry: (projectId, runId) => invoke(b.codingRetry, projectId, runId)
+  }
 }
 
 const api = {
   catalog,
-  workflow,
+  backend,
+  workflow: backend.workflow,
   gemini,
   canvas,
   indexing,

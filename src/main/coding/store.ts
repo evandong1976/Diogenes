@@ -4,12 +4,22 @@ import type { CodingRunView, StartCodingRun } from '../../shared/codingRun'
 
 const RUN_ID = /^run_[0-9a-f]{32}$/
 
+/** Durable run records. `CodingRunStore` (files) and `PgCodingRunStore` implement it. */
+export interface CodingRunRepository {
+  /** Saves the frozen input and the first run record. The input is never rewritten. */
+  create(run: CodingRunView, input: StartCodingRun): Promise<void>
+  save(run: CodingRunView): Promise<void>
+  read(runId: string): Promise<CodingRunView | null>
+  input(runId: string): Promise<StartCodingRun | null>
+  list(): Promise<CodingRunView[]>
+}
+
 /**
  * On-disk layout under `<root>/<runId>/`:
  *   input.json   the frozen handoff and staged sources (written once, before any provider call)
  *   run.json     the current run record (rewritten atomically on every change)
  */
-export class CodingRunStore {
+export class CodingRunStore implements CodingRunRepository {
   constructor(private readonly root: string) {}
 
   private dir(runId: string): string {

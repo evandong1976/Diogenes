@@ -12,7 +12,7 @@ import type {
 import { applyCatalogPatch } from '../catalog/editing'
 import type { ThreadHistory } from './history'
 import type { Content, ModelClient, Part } from './model'
-import { checkProjectId, type DesignStore } from './store'
+import { checkProjectId, type DesignStateStore } from './store'
 import {
   runTool,
   toolDeclarations,
@@ -22,7 +22,7 @@ import {
 } from './tools'
 
 export interface DesignServiceOptions {
-  store: DesignStore
+  store: DesignStateStore
   /** The observed catalog (revision 0) for a repository, as published by indexing. */
   observedCatalog: (repositoryId: number) => Promise<CatalogGraph | null>
   readSource: SourceReader
@@ -385,6 +385,7 @@ export class DesignService {
         preview: proposal.preview,
         evidence: proposal.evidence,
         sources: affectedSources(before, result.graph, proposal),
+        baseGraph: before,
         approvedAt: now()
       }
       draft.graph = result.graph
