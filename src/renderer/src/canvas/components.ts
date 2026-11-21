@@ -181,13 +181,19 @@ export interface Workspace {
   setDraft(update: (d: Draft) => Draft): void
   /** A file picked in the sidebar: its components are highlighted. */
   focusFile: string | null
+  /** Reports the selected canvas node's catalog component (or null), for the design chat. */
+  onSelectComponent(selection: ComponentSelection | null): void
 }
+
+/** A catalog component picked on the canvas. `componentId` is a catalog node ID. */
+export type ComponentSelection = { componentId: string; label: string }
 
 export const WorkspaceContext = createContext<Workspace>({
   levelTag: '',
   draft: emptyDraft,
   setDraft: () => {},
-  focusFile: null
+  focusFile: null,
+  onSelectComponent: () => {}
 })
 
 export const useWorkspace = (): Workspace => useContext(WorkspaceContext)

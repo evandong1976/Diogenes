@@ -112,6 +112,32 @@ describe('indexing pipeline on the alias/barrel fixture', () => {
   })
 })
 
+describe('indexing a repo with no TypeScript or JavaScript', () => {
+  it('records an empty code index instead of failing, and still reads manifests', async () => {
+    const out = join(tmp, 'no-scripts.tar.gz')
+    await create(
+      {
+        gzip: true,
+        file: out,
+        cwd: join(__dirname, '../fixtures/no-scripts'),
+        prefix: 'octo-empty-ccccccc',
+        portable: true
+      },
+      ['README.md', 'package.json']
+    )
+    const res = await runIndexJob({
+      archivePath: out,
+      workDir: join(tmp, 'job-empty'),
+      outDir: join(tmp, 'out-empty'),
+      repository: { id: 7, fullName: 'octo/empty' },
+      commit: { sha: 'c'.repeat(40), ref: 'main' }
+    })
+    const graph: SoftwareGraph = JSON.parse(await readFile(res.graphPath, 'utf8'))
+    expect(graph.diagnostics.map((d) => d.code)).toContain('no-typescript-sources')
+    expect(graph.catalog?.nodes.some((n) => n.kind === 'module')).toBe(true)
+  }, 60_000)
+})
+
 describe('indexing service', () => {
   it('reuses cache, keeps the prior graph when a refresh fails, and reopens from disk', async () => {
     const dataDir = join(tmp, 'data')

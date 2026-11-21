@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
   Controls,
   Handle,
@@ -27,9 +27,11 @@ import {
   middleTruncate,
   newComponent,
   outProtocol,
-  useWorkspace
+  useWorkspace,
+  type ComponentSelection
 } from './components'
 import type { CatalogProtocol } from '../../../shared/catalog'
+import { brandFor, methodOf, shapeFor, type Brand } from './brands'
 
 type ComponentData = DiagramNode & {
   outProtocol: CatalogProtocol
@@ -74,11 +76,22 @@ function KindIcon({ kind }: { kind: DiagramNode['catalogKind'] }): React.JSX.Ele
   )
 }
 
+function BrandIcon({ brand }: { brand: Brand }): React.JSX.Element {
+  return (
+    <svg className="dg-node__icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d={brand.path} />
+    </svg>
+  )
+}
+
 /** The canvas component card: header, optional file rows, status, evidence footer (v0.3). */
 function ComponentView({ id, data, selected }: NodeProps<ComponentNode>): React.JSX.Element {
   const linkFile = useContext(LinkFileContext)
   const [dropping, setDropping] = useState(false)
   const kind = guessKind(data)
+  const brand = brandFor(data)
+  const shape = shapeFor(data, kind)
+  const method = shape === 'endpoint' ? methodOf(data) : undefined
   const resolution =
     data.change === 'added' ? 'proposed' : data.unresolved ? 'unresolved' : data.resolution
   const state = selected ? 'selected' : data.change === 'removed' ? 'error' : undefined
@@ -89,6 +102,13 @@ function ComponentView({ id, data, selected }: NodeProps<ComponentNode>): React.
   return (
     <div
       className="dg-node component"
+      data-shape={shape}
+      data-branded={brand ? true : undefined}
+      style={
+        brand
+          ? ({ '--brand': brand.hex, '--brand-ink': brand.ink } as React.CSSProperties)
+          : undefined
+      }
       data-resolution={resolution}
       data-state={state}
       data-dropping={dropping || undefined}
@@ -113,16 +133,29 @@ function ComponentView({ id, data, selected }: NodeProps<ComponentNode>): React.
         className="dg-port dg-port--in"
         data-protocol={data.outProtocol}
       />
+      {shape === 'view' && (
+        <div className="component__chrome" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+          <span className="dg-data">{data.detail ?? '/'}</span>
+        </div>
+      )}
       <div className="dg-node__header">
-        <span className="component__tile">
-          <KindIcon kind={kind} />
+        <span className="component__tile" title={brand?.title}>
+          {brand ? <BrandIcon brand={brand} /> : <KindIcon kind={kind} />}
         </span>
+        {method && (
+          <span className="component__method" data-method={method}>
+            {method}
+          </span>
+        )}
         <span className="dg-node__lines">
           <span className="dg-node__title">{data.label}</span>
           <span className="dg-node__attr">{data.detail ?? data.meta}</span>
         </span>
         {data.tag && <span className="dg-node__metric">{data.tag}</span>}
-        <span className="dg-node__type">{data.type ?? data.kind}</span>
+        <span className="dg-node__type">{brand?.title ?? data.type ?? data.kind}</span>
       </div>
       {rows.length > 0 && (
         <ul className="component__rows">
@@ -177,10 +210,27 @@ interface Props {
   canvasRef?: React.Ref<HTMLDivElement>
   /** Drawn above the diagram, inside the captured area. */
   overlay?: React.ReactNode
+  /**
+   * The catalog component a selected node stands for. Defaults to the node itself when its ID is
+   * a catalog ID; return null for nodes that aren't catalog components.
+   */
+  componentFor?(node: DiagramNode): ComponentSelection | null
 }
 
-export function DiagramCanvas({ diagram, viewKey, canvasRef, overlay }: Props): React.JSX.Element {
-  const { draft, setDraft, focusFile, levelTag } = useWorkspace()
+/** Nodes the user drafted or that summarize packages have no catalog ID. */
+const catalogSelection = (node: DiagramNode): ComponentSelection | null =>
+  isDraft(node.id) || node.id.startsWith('package:')
+    ? null
+    : { componentId: node.id, label: node.label }
+
+export function DiagramCanvas({
+  diagram,
+  viewKey,
+  canvasRef,
+  overlay,
+  componentFor = catalogSelection
+}: Props): React.JSX.Element {
+  const { draft, setDraft, focusFile, levelTag, onSelectComponent } = useWorkspace()
   const [selectedId, setSelectedId] = useState<{ kind: 'node' | 'edge'; id: string } | null>(null)
   const [rf, setRf] = useState<ReactFlowInstance<ComponentNode> | null>(null)
   // Positions while a drag is in progress; committed to the draft when it ends.
@@ -382,6 +432,17 @@ export function DiagramCanvas({ diagram, viewKey, canvasRef, overlay }: Props): 
     }
     return undefined
   }, [merged, selectedId])
+
+  // Tell the workspace which catalog component is selected, so the design chat can attach it.
+  const selectedNode = selected?.kind === 'node' ? selected.item : null
+  const component = selectedNode ? componentFor(selectedNode) : null
+  const componentKey = component ? `${component.componentId}\0${component.label}` : ''
+  useEffect(() => {
+    onSelectComponent(component)
+    // Keyed on the selection's identity, not the object, so redraws don't re-report it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [componentKey])
+  useEffect(() => () => onSelectComponent(null), [onSelectComponent])
 
   const empty = merged.nodes.length === 0
 

@@ -12,8 +12,16 @@ import { ArchitectureLevel } from './canvas/ArchitectureLevel'
 import { indexLabel } from './canvas/indexStatus'
 import { RepositoryCatalog } from './RepositoryCatalog'
 import { Sidebar } from './Sidebar'
-import { LEVELS, WorkspaceContext, emptyDraft, type Draft } from './canvas/components'
+import {
+  LEVELS,
+  WorkspaceContext,
+  emptyDraft,
+  type ComponentSelection,
+  type Draft
+} from './canvas/components'
 import { catalogKindsByLevel } from './canvas/diagrams'
+import { ChatPane } from './agent/ChatPane'
+import { useDesignChat, type DesignChat } from './agent/useDesignChat'
 
 function App(): React.JSX.Element {
   const [user, setUser] = useState<GithubUser | null | undefined>(undefined)
@@ -38,6 +46,9 @@ function App(): React.JSX.Element {
   // What the user drew on each level's canvas, and the file picked in the sidebar.
   const [drafts, setDrafts] = useState<Record<number, Draft>>({})
   const [focusFile, setFocusFile] = useState<string | null>(null)
+  // The catalog component selected on the canvas, offered to the design chat as context.
+  const [selected, setSelected] = useState<ComponentSelection | null>(null)
+  const [chatOpen, setChatOpen] = useState(true)
 
   const pickRepo = (next: GithubRepo): void => {
     window.api.gemini.useFixture()
@@ -47,6 +58,7 @@ function App(): React.JSX.Element {
     setIndexed(null)
     setDrafts({})
     setFocusFile(null)
+    setSelected(null)
     setRepo(next)
     // Index in the background; diagrams use it as evidence once it's ready.
     window.api.indexing.start(next.id).then(setIndexStatus, (e: unknown) =>
@@ -82,6 +94,9 @@ function App(): React.JSX.Element {
 
   // Load the published graph whenever a finished snapshot appears or changes (cached, or fresh).
   const publishedSha = indexStatus?.lastIndexed?.sha
+  // The design backend is project-scoped to a GitHub repo, so example mode has no chat.
+  const chatProject = !exampleOpen && repo ? String(repo.id) : null
+  const chat = useDesignChat(chatProject, chatProject ? (publishedSha ?? null) : null)
   useEffect(() => {
     if (repoId === undefined || !publishedSha) return
     let active = true
@@ -139,10 +154,11 @@ function App(): React.JSX.Element {
         draft: drafts[level] ?? emptyDraft,
         setDraft: (update) =>
           setDrafts((all) => ({ ...all, [level]: update(all[level] ?? emptyDraft) })),
-        focusFile
+        focusFile,
+        onSelectComponent: setSelected
       }}
     >
-      <div className="app">
+      <div className="app" data-chat={shownRepo && chatOpen ? '' : undefined}>
         <Workspace
           shownRepo={shownRepo}
           catalog={catalog}
@@ -156,6 +172,9 @@ function App(): React.JSX.Element {
           focusFile={focusFile}
           setFocusFile={setFocusFile}
           onPickRepo={pickRepo}
+          chat={shownRepo ? chat : null}
+          chatOpen={chatOpen}
+          onChatOpen={setChatOpen}
           onConnectRepo={() => {
             if (exampleOpen) setExampleOpen(false)
             else setRepo(null)
@@ -186,6 +205,14 @@ function App(): React.JSX.Element {
             )}
           </main>
         )}
+        {shownRepo && chatOpen && (
+          <ChatPane
+            chat={chat}
+            selected={selected}
+            onClose={() => setChatOpen(false)}
+            onOpenSource={setFocusFile}
+          />
+        )}
         <footer className="statusbar dg-data">
           <span>
             L{level + 1} · {LEVELS[level].name}
@@ -212,7 +239,10 @@ function Workspace({
   focusFile,
   setFocusFile,
   onPickRepo,
-  onConnectRepo
+  onConnectRepo,
+  chat,
+  chatOpen,
+  onChatOpen
 }: {
   shownRepo: GithubRepo | null
   catalog: SoftwareGraph['catalog'] | null
@@ -227,6 +257,9 @@ function Workspace({
   setFocusFile(path: string | null): void
   onPickRepo(repo: GithubRepo): void
   onConnectRepo(): void
+  chat: DesignChat | null
+  chatOpen: boolean
+  onChatOpen(open: boolean): void
 }): React.JSX.Element {
   const levelCounts = useMemo(() => {
     if (!catalog) return [null, null, null]
@@ -265,6 +298,9 @@ function Workspace({
       fileCounts={fileCounts}
       focusFile={focusFile}
       onFocusFile={setFocusFile}
+      chat={chat}
+      chatOpen={chatOpen}
+      onChatOpen={onChatOpen}
     />
   )
 }

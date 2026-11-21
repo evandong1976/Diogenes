@@ -1,5 +1,5 @@
 import { execFileSync } from 'child_process'
-import { mkdtempSync, readFileSync, writeFileSync } from 'fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { describe, expect, it } from 'vitest'
@@ -25,7 +25,7 @@ function baseRepo(): { dir: string; sha: string } {
   git(dir, 'init', '-q')
   git(dir, 'config', 'user.email', 't@example.invalid')
   git(dir, 'config', 'user.name', 'Test')
-  execFileSync('mkdir', ['-p', join(dir, 'src')])
+  mkdirSync(join(dir, 'src'), { recursive: true })
   writeFileSync(join(dir, 'src/retry.ts'), before)
   writeFileSync(join(dir, 'README.md'), 'out of scope\n')
   git(dir, 'add', '-A')
