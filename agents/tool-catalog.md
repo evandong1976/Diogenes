@@ -47,3 +47,29 @@ These are ownership targets for teammates. Add a callable name here when its int
 ## Approval, coding handoff and verification
 
 `window.api.workflow` exposes the headless workflow: `preview`, `approve`, `startHandoff`, `refresh`, `steer`, `cancel`, `requestCorrection`, `resolveDecision`, `getHandoff`, `getProject`. See [Workflow](workflow.md) for identities, lifecycle, what each service implements, and where local guarantees end. Until the coding gateway and design thread are wired in, `startHandoff` rejects and results are queryable only through `getProject`.
+
+## Project threads (main process)
+
+`ThreadStore` in [src/main/threads/store.ts](../src/main/threads/store.ts) keeps design and coding conversations so a project can be reopened after a restart. Types are in [src/shared/threads.ts](../src/shared/threads.ts). It is not on the preload bridge yet. Services in `src/main` call it directly, and the shared app wiring (IPC, `<userData>/threads` root, single-instance lock) is pending.
+
+| Call                                                        | Return            | Effect                                                                                                                    |
+| ----------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `create(projectId, { kind, title?, id? })`                  | `ThreadSummary`   | New `design` or `coding` thread with a stable `thr_` ID. Re-creating the same ID and kind returns it unchanged.           |
+| `list(projectId, { kind? })`                                | `ThreadSummary[]` | Threads in one project, most recently updated first.                                                                      |
+| `open(projectId, threadId)`                                 | `ThreadSnapshot`  | Ordered events plus provider state. This is enough to restore a conversation without calling Gemini.                      |
+| `append(projectId, threadId, events, { expectedLastSeq? })` | `AppendResult`    | Appends one or more events as a single atomic write.                                                                      |
+| `eventsSince(projectId, threadId, afterSeq)`                | `ThreadEvent[]`   | Events after a known `lastSeq`.                                                                                           |
+| `setProvider(projectId, threadId, state \| null)`           | `ThreadSummary`   | Replaces Gemini continuation metadata (`model`, `interactionId`, `environmentId`, `status`). The transcript is unchanged. |
+| `subscribe(listener)`                                       | Unsubscribe       | Delivers a `ThreadChange` after every committed write.                                                                    |
+
+Events are `user_message` (with optional `context.selectedComponentIds`), `assistant_message`, `tool_call`, `tool_result` and `reference`. Any event can carry `refs` to a `draftRevision`, `proposal`, `handoff`, `codingRun` or `verdict`. The store only saves these references. The owning service reports the latest state of each object.
+
+**Storage.** Each thread is one file at `<root>/<projectId>/<threadId>.json`. Every change re-reads the file, then writes a temp file, fsyncs it and renames it over the original. A restart therefore sees either the previous or the next complete version, never a partial write.
+
+**Retries.** Pass an event `id`. Appending the same `id` with identical content returns the stored event with `duplicate: true`, even if other events were appended since. The same `id` with different content is rejected with `conflict`. Events without an `id` get a generated one and are never deduplicated.
+
+**Two writers.** Writes to one thread are queued within the process. Concurrent appends all land, in arrival order, with gapless `seq`. A writer that must not interleave passes `expectedLastSeq` and gets `stale` if the thread moved. Only one store may use a root, and Electron's single-instance lock (scoped to `userData`) enforces that.
+
+**Following a thread.** Call `open()`, remember `lastSeq`, then use `subscribe()` for pushes, or `eventsSince(lastSeq)` after a reconnect.
+
+Run `pnpm vitest run test/threads` to check it.
