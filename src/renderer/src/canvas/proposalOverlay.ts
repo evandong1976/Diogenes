@@ -3,7 +3,7 @@
  * (test/canvas/proposalOverlay.test.ts).
  *
  * The app canvas shows Gemini's whiteboard boxes; the design draft is the indexed catalog. A
- * catalog component belongs to the box whose files hold most of its sources. Pending additions
+ * catalog component belongs to its exact box, or one identified from its name and sources. Pending additions
  * become new boxes, removals mark the box (or a chip for the component), and connections are
  * drawn between whatever stands for their ends. Components with no box get an "indexed" chip, so
  * every changed connection has two visible ends.
@@ -101,30 +101,38 @@ const FLOW_KIND: Record<CatalogKind, FlowKind> = {
 
 /** Modules are packages; prefer the component that does something when picking a box's primary. */
 const rank = (n: CatalogNode): number => (n.kind === 'module' || n.kind === 'dataContract' ? 1 : 0)
+const nameKey = (name: string): string => name.trim().toLowerCase()
 
 /** Indexed components whose sources sit in the box's files, primary first. */
-export function componentsInBox(box: Pick<FlowBox, 'paths'>, graph: CatalogGraph): CatalogNode[] {
-  if (!box.paths.length) return []
+export function componentsInBox(box: FlowBox, graph: CatalogGraph): CatalogNode[] {
   const files = new Set(box.paths)
   const hits = (n: CatalogNode): number => n.sources.filter((s) => files.has(s.path)).length
+  const match = (n: CatalogNode): number =>
+    n.id === box.id ? 2 : Number(nameKey(n.name) === nameKey(box.name))
   return graph.nodes
-    .filter((n) => n.kind !== 'dataContract' && hits(n) > 0)
-    .sort((a, b) => rank(a) - rank(b) || hits(b) - hits(a) || a.name.localeCompare(b.name))
+    .filter((n) => n.id === box.id || (n.kind !== 'dataContract' && hits(n) > 0))
+    .sort(
+      (a, b) =>
+        match(b) - match(a) ||
+        rank(a) - rank(b) ||
+        hits(b) - hits(a) ||
+        a.name.localeCompare(b.name)
+    )
 }
 
-/** The box that holds most of a component's sources. */
+/** Ambiguous shared files get a separate endpoint so a rewire never points to the wrong box. */
 function boxOf(flow: AppFlow, node: CatalogNode): FlowBox | null {
-  let best: FlowBox | null = null
-  let bestHits = 0
-  for (const box of flow.boxes) {
+  const exact = flow.boxes.find((box) => box.id === node.id)
+  if (exact) return exact
+  const matches = flow.boxes.flatMap((box) => {
     const files = new Set(box.paths)
     const hits = node.sources.filter((s) => files.has(s.path)).length
-    if (hits > bestHits) {
-      best = box
-      bestHits = hits
-    }
-  }
-  return best
+    return hits ? [{ box, hits, named: Number(nameKey(box.name) === nameKey(node.name)) }] : []
+  })
+  matches.sort((a, b) => b.named - a.named || b.hits - a.hits)
+  const [first, second] = matches
+  if (!first || (second && first.named === second.named && first.hits === second.hits)) return null
+  return first.box
 }
 
 function patchNodes(ops: CatalogOperation[]): Map<string, CatalogNode> {
@@ -200,10 +208,9 @@ export function proposalOverlay(
     return chip(`indexed:${componentId}`, node, was === 'updated' ? 'updated' : 'indexed')
   }
 
-  // Every changed component is visible even when no changed connection reaches it. Data
-  // contracts are port annotations, not things on the whiteboard.
+  // New schema nodes and other additions are visible even without a changed connection.
   for (const c of preview.components)
-    if ((opNodes.get(c.id) ?? baseNodes.get(c.id))?.kind !== 'dataContract') endpoint(c.id)
+    if (c.change !== 'updated' || baseNodes.get(c.id)?.kind !== 'dataContract') endpoint(c.id)
 
   const links: OverlayLink[] = []
   const linkMarks: Overlay['linkMarks'] = {}
@@ -226,9 +233,7 @@ export function proposalOverlay(
     }
     const label = `${rewired.has(c.id) ? 'rewire · ' : ''}${edge.kind.replace('_', ' ')}`
     if (c.change === 'removed') {
-      const drawn = flow.links.find(
-        (l) => (l.from === from && l.to === to) || (l.from === to && l.to === from)
-      )
+      const drawn = flow.links.find((l) => l.from === from && l.to === to)
       if (drawn) {
         linkMarks[drawn.id] = 'removed'
         continue

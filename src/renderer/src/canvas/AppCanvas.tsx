@@ -605,14 +605,14 @@ function OverlayLegend({ overlay }: { overlay: Overlay }): React.JSX.Element {
   return (
     <>
       <span className="flow-pending__code">
-        {overlay.status === 'pending' ? 'Pending preview' : 'Approved · not in code yet'} · r
+        {overlay.status === 'pending' ? 'Pending preview' : 'Approved draft'} · r
         {overlay.baseRevision} → r{overlay.resultRevision} @ {overlay.commitSha.slice(0, 7)}
       </span>
       <span>{parts.join(' · ') || 'No drawable change'}</span>
       <span className="flow-pending__hint">
         {overlay.status === 'pending'
           ? 'Not applied. Approve or discard it in the design chat.'
-          : 'In the draft; send it to the coding agent from the chat.'}
+          : 'See Coding for implementation and verification.'}
       </span>
     </>
   )

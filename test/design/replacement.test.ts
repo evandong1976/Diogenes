@@ -272,9 +272,11 @@ describe('replacing an indexed Firebase-backed component', () => {
       // The canvas draws the pending revision against draft r0.
       const focus = focusedProposal(s, s.draft, 'thr')
       expect(focus).toMatchObject({ status: 'pending', proposal: { id: v2.id } })
-      const overlay = proposalOverlay(flow, focus as Extract<typeof focus, { base: CatalogGraph }>)
+      const current = focus as Extract<typeof focus, { base: CatalogGraph }>
+      const overlay = proposalOverlay(flow, current)
       expect(overlay).toMatchObject({ baseRevision: 0, resultRevision: 1, commitSha: baseline.commit.sha })
       expect(overlay.boxes.map((b) => [b.id, b.kind, b.change])).toEqual([
+        [`pending:${CONTRACT}`, 'data', 'added'],
         [`pending:${STORE}`, 'data', 'added'],
         [`pending:${SUPABASE_OP}`, 'service', 'added']
       ])
@@ -290,6 +292,15 @@ describe('replacing an indexed Firebase-backed component', () => {
           change: 'added'
         }
       ])
+      // Two canvas boxes can cite the same file. The removed link belongs to the exact IPC box.
+      const exactFlow: AppFlow = {
+        boxes: [...flow.boxes, { ...flow.boxes[1], id: FIREBASE_OP }],
+        links: [{ ...flow.links[0], to: FIREBASE_OP }]
+      }
+      const exact = proposalOverlay(exactFlow, current)
+      expect(exact.boxMarks[FIREBASE_OP]).toBe('removed')
+      expect(exact.boxMarks.ipc).toBeUndefined()
+      expect(exact.linkMarks['window->ipc']).toBe('removed')
       // Discarding reverts the canvas: nothing pending or approved is left to draw.
       const discarded = { ...s, proposals: s.proposals.map((p) => ({ ...p, status: 'rejected' as const })) }
       expect(focusedProposal(discarded, s.draft, 'thr')).toBeNull()
