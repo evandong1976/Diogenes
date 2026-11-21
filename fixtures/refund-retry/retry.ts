@@ -13,7 +13,7 @@ export interface RefundRetry {
 const ATTEMPT_NUMBER: Record<RetryAttempt['$'], number> = { A1: 1, A2: 2, A3: 3 }
 
 export function isInFlight(state: RetryState): boolean {
-  return state.$ === 'SAttempt1' || state.$ === 'SAttempt2'
+  return state.$ === 'SAttempt1' || state.$ === 'SAttempt2' || state.$ === 'SAttempt3'
 }
 
 /** Feeds outcomes through the Bend reducer one at a time and forwards its attempt commands. */

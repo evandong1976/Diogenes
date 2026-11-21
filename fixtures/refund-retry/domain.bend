@@ -13,6 +13,7 @@ type RetryState is Data:
   SReady{}
   SAttempt1{}
   SAttempt2{}
+  SAttempt3{}
   SSucceeded{}
   SFailed{}
 

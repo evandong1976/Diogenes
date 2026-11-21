@@ -2,7 +2,12 @@
 export type RetryAttempt = { $: 'A1' } | { $: 'A2' } | { $: 'A3' }
 
 export type RetryState =
-  { $: 'SReady' } | { $: 'SAttempt1' } | { $: 'SAttempt2' } | { $: 'SSucceeded' } | { $: 'SFailed' }
+  | { $: 'SReady' }
+  | { $: 'SAttempt1' }
+  | { $: 'SAttempt2' }
+  | { $: 'SAttempt3' }
+  | { $: 'SSucceeded' }
+  | { $: 'SFailed' }
 
 export type RetryEvent =
   { $: 'EStart' } | { $: 'ESucceeded'; n: RetryAttempt } | { $: 'EFailed'; n: RetryAttempt }

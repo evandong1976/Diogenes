@@ -1,7 +1,7 @@
 import Base
 import ./domain.bend as D
 
-# Pure refund retry decision: two attempts, then a terminal failure.
+# Pure refund retry decision: three attempts, then a terminal failure.
 def step(+s: D.RetryState, e: D.RetryEvent) -> D.RetryStep:
   match s e:
     case D.SReady{} D.EStart{}:
@@ -13,6 +13,10 @@ def step(+s: D.RetryState, e: D.RetryEvent) -> D.RetryStep:
     case D.SAttempt2{} D.ESucceeded{D.A2{}}:
       D.RetryStep{D.SSucceeded{}, D.NoEffect{}}
     case D.SAttempt2{} D.EFailed{D.A2{}}:
+      D.RetryStep{D.SAttempt3{}, D.RunAttempt{D.A3{}}}
+    case D.SAttempt3{} D.ESucceeded{D.A3{}}:
+      D.RetryStep{D.SSucceeded{}, D.NoEffect{}}
+    case D.SAttempt3{} D.EFailed{D.A3{}}:
       D.RetryStep{D.SFailed{}, D.NoEffect{}}
     case _ _:
       D.RetryStep{s, D.NoEffect{}}
