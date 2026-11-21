@@ -15,13 +15,13 @@ export function codingBrief(packet: ApprovedChange, correction?: CorrectionReque
   return sections.join('\n\n')
 }
 
-/** A steer: the developer's direction for the same approval, sent as a follow-up turn. */
+/** A steer: the developer's direction for the same change, sent as a follow-up turn. */
 export function steerBrief(packet: ApprovedChange, message: string): string {
   return [
-    `Direction from the developer for the approved change to ${packet.targetComponentId}:`,
+    `Follow-up from the developer about your change to ${packet.repository.fullName}:`,
     message,
     '',
-    `The approval is unchanged. Still required:\n${list(packet.requiredChanges)}`,
+    `The goal is the same. The code must still:\n${list(packet.requiredChanges.map(task))}`,
     `Edit only: ${editableScope(packet).join(', ')}`
   ].join('\n')
 }
@@ -41,9 +41,10 @@ Do not connect to, migrate or seed any real database or external service. Change
 
 function catalogSections(packet: CatalogApprovedChange): string[] {
   const { plan } = packet
+  const goal = plan?.summary ?? task(packet.requiredChanges[0] ?? 'Implement the approved design')
   return [
-    `# Implement approved change around ${packet.targetComponentId}`,
-    `Repository ${packet.repository.fullName} at base commit ${packet.baseCommit}. Edit only: ${packet.scope.map((p) => `\`${p}\``).join(', ')}.`,
+    `# ${goal}`,
+    `Make the change in ${packet.repository.fullName} at commit ${packet.baseCommit}. Edit the repository code only in ${packet.scope.map((p) => `\`${p}\``).join(', ')}.`,
     ...(plan
       ? [
           `## Intended behavior\n${plan.summary}\n\n${plan.behavior}`,
@@ -53,8 +54,8 @@ function catalogSections(packet: CatalogApprovedChange): string[] {
             : [])
         ]
       : []),
-    `## Required changes\n${list(packet.requiredChanges)}`,
-    `## Must stay the same\n${list([...(plan?.preserved ?? []), ...packet.preserved])}`,
+    `## What the code must do\n${list(packet.requiredChanges.map(task))}`,
+    `## Must stay the same\n${list([...(plan?.preserved ?? []), ...packet.preserved.map(keep)])}`,
     `## Your choice\n${list(packet.openChoices)}`,
     ...(plan?.evidence.length ? [evidenceSection(packet.baseCommit, plan.evidence)] : []),
     ...(plan?.acceptance.length
@@ -63,16 +64,14 @@ function catalogSections(packet: CatalogApprovedChange): string[] {
         ]
       : []),
     WORKSPACE,
-    `## Checked locally after you finish\nYour run completing does not accept the change. These checks do, on the exact files you export: the repository is type checked and re-indexed, and each connection below is looked up in the re-indexed code.\n${list(
+    `## How your change is checked\nYour run completing does not accept the change. These checks do, on the exact files you export: the repository is type checked and re-indexed, and each connection below is looked up in the re-indexed code.\n${list(
       packet.obligations.map((o) => `\`${o.id}\`: ${o.scope}`)
     )}`,
-    `## Connections\n${list(packet.connections.map((c) => `${c.expect === 'present' ? 'must exist' : 'must not exist'}: ${c.kind} ${c.from} -> ${c.to}`))}`,
     ...(packet.unobservable.length
       ? [
           `## Required but not observable locally\nDo these; the re-index cannot see them, so they are reported \`unknown\`, never passed.\n${list(packet.unobservable)}`
         ]
-      : []),
-    `## Approved catalog patch\n\`\`\`json\n${JSON.stringify(packet.patch.operations, null, 2)}\n\`\`\``
+      : [])
   ]
 }
 
@@ -88,6 +87,15 @@ function evidenceSection(
     )
   ].join('\n\n')
 }
+
+/** Convert the verifier's edge descriptions into instructions about the code. */
+function task(line: string): string {
+  const remains = line.replace(/ is connected$/, '')
+  const removed = remains.replace(/ is no longer connected$/, '')
+  return removed === remains ? remains : `Remove the connection where ${removed}.`
+}
+
+const keep = (line: string): string => line.replace(/ stays connected$/, ' (keep this)')
 
 function retrySections(packet: RetryApprovedChange): string[] {
   const { bindings: b } = packet
@@ -114,8 +122,8 @@ function retrySections(packet: RetryApprovedChange): string[] {
 
 function correctionSection(correction: CorrectionRequest): string {
   return [
-    `## Correction requested for candidate ${correction.previousCandidateId}`,
-    `The approval is unchanged. Fix only what failed: ${correction.obligationIds.join(', ')}.`,
+    `## Correction requested: fix your previous change`,
+    `Your last change (${correction.previousCandidateId.slice(0, 12)}) did not pass these checks: ${correction.obligationIds.join(', ')}. Keep what works and fix only this.`,
     correction.instructions,
     ...correction.mismatches.map(
       (m) =>

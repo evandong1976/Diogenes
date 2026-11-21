@@ -38,6 +38,7 @@ import {
   providerLine,
   selectEntry
 } from '../../src/renderer/src/agent/coding'
+import { parseMarkdown } from '../../src/renderer/src/agent/briefMarkdown'
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 const fixture = join(repoRoot, 'test/fixtures/orders-ipc')
@@ -485,6 +486,14 @@ describe('catalog change through handoff, correction and local verification', ()
     expect(briefs[0].submitted).toContain(briefs[0].markdown)
     expect(briefs[0].submitted).toContain('git status and git diff')
     expect(briefs[1].markdown).toContain('Correction requested')
+    // The brief reads as a code change in the repository, and renders as sections and lists.
+    const blocks = parseMarkdown(briefs[0].markdown)
+    expect(blocks.filter((b) => b.kind === 'heading').map((b) => b.text)).toEqual(
+      expect.arrayContaining(['What the code must do', 'How your change is checked'])
+    )
+    expect(blocks.some((b) => b.kind === 'list')).toBe(true)
+    expect(briefs[0].markdown).toContain('orders:archived')
+    expect(briefs[0].markdown).not.toMatch(/catalog patch|generic:ts:|is connected/)
     // The failed candidate is still reviewable as a diff.
     const failedDiff = await app.workflow.candidateDiff(PROJECT, handoffId, 1)
     expect(failedDiff).toMatchObject({

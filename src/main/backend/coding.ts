@@ -156,6 +156,7 @@ function snapshot(view: CodingRunView, approvalId: string): CodingRunSnapshot {
     at: view.updatedAt,
     kind: a.kind === 'command' || a.kind === 'command_output' ? 'tool' : 'message',
     text: a.text,
+    turn: a.turn,
     ...(a.kind === 'command' && { shell: 'command' as const }),
     ...(a.kind === 'command_output' && { shell: 'output' as const })
   }))
@@ -164,9 +165,16 @@ function snapshot(view: CodingRunView, approvalId: string): CodingRunSnapshot {
       events.push({
         at: t.attempts[0]?.requestedAt ?? view.updatedAt,
         kind: 'steer',
-        text: t.message
+        text: t.message,
+        turn: t.index
       })
-    if (t.error) events.push({ at: t.completedAt ?? view.updatedAt, kind: 'error', text: t.error })
+    if (t.error)
+      events.push({
+        at: t.completedAt ?? view.updatedAt,
+        kind: 'error',
+        text: t.error,
+        turn: t.index
+      })
   }
   const error =
     view.phase === 'idle' && view.candidate.status === 'missing'

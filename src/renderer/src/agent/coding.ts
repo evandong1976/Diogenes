@@ -159,3 +159,79 @@ export function traceRows(events: RunEvent[]): TraceRow[] {
     return { key, kind: e.kind, text: e.text }
   })
 }
+
+/**
+ * The activity one attempt produced. Steers and corrections continue the same managed run, so
+ * the newest snapshot of that run holds every turn; this keeps the attempt's own turn. The
+ * developer's direction is shown as the attempt's message, so steer events are left out.
+ */
+export function attemptEvents(handoff: HandoffRecord, run: RunRecord): RunEvent[] {
+  const fresh = handoff.runs.findLast((r) => r.run.runId === run.run.runId) ?? run
+  const turn = run.run.turn ?? 0
+  return fresh.run.events.filter(
+    (e) => e.kind !== 'steer' && (e.turn === undefined ? turn === 0 : e.turn === turn)
+  )
+}
+
+/** A follow-up can go to the coding agent once its turn has ended and the handoff is open. */
+export const canFollowUp = (handoff: HandoffRecord | null): boolean =>
+  !!handoff && !['coding', 'verifying', 'closed'].includes(handoff.stage)
+
+export const ORIGIN_LABEL: Record<NonNullable<RunRecord['origin']>, string> = {
+  start: 'Handoff',
+  correction: 'Correction',
+  steer: 'Follow-up',
+  retry: 'Retry'
+}
+
+const files = (n: number): string => `${n} file${n === 1 ? '' : 's'}`
+
+/**
+ * The assistant's own words after an attempt: what happened in the codebase and what the local
+ * checks found. The agent finishing is stated separately from the verdict, never as a pass.
+ */
+export function replySummary(
+  handoff: HandoffRecord,
+  run: RunRecord
+): { text: string; tone: Tone } | null {
+  const { candidate, verdict, candidateRejected } = run
+  const changed = candidate ? candidate.files.length + candidate.deleted.length : 0
+  if (run.run.status === 'failed')
+    return {
+      text: `The coding agent stopped before finishing${run.run.error ? `: ${run.run.error}` : '.'}`,
+      tone: 'danger'
+    }
+  if (run.run.status === 'cancelled') return { text: 'You stopped this turn.', tone: 'warn' }
+  if (candidateRejected)
+    return {
+      text: `The coding agent finished, but I couldn't use its change: ${candidateRejected}`,
+      tone: 'danger'
+    }
+  if (!candidate) return null
+  if (!verdict || verdict.candidateId !== candidate.candidateId)
+    return {
+      text: `The coding agent finished and changed ${files(changed)}. Finishing doesn't accept it, so I'm checking the code locally now.`,
+      tone: 'info'
+    }
+  const failed = verdict.obligations.filter((o) => o.outcome === 'fail').map((o) => o.id)
+  const unknown = verdict.obligations.filter((o) => o.outcome === 'unknown').map((o) => o.id)
+  if (verdict.overall === 'pass' && !verdict.invalid)
+    return {
+      text: `It changed ${files(changed)}, and I checked the result locally: all ${verdict.obligations.length} checks passed. The change matches the approved design and is ready to review.`,
+      tone: 'ok'
+    }
+  const left = handoff.maxAttempts - handoff.runs.filter((r) => r.origin !== 'steer').length
+  return {
+    text: [
+      `It changed ${files(changed)}, but the local checks don't confirm the design yet.`,
+      failed.length ? `Failed: ${failed.join(', ')}.` : '',
+      unknown.length ? `Couldn't confirm: ${unknown.join(', ')}.` : '',
+      handoff.stage === 'correctable' && handoff.runs.at(-1) === run
+        ? `The evidence is below; I can ask for a fix in this same handoff (${left} attempt${left === 1 ? '' : 's'} left), or you can follow up yourself.`
+        : ''
+    ]
+      .filter(Boolean)
+      .join(' '),
+    tone: failed.length ? 'danger' : 'warn'
+  }
+}

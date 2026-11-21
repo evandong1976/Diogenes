@@ -73,6 +73,8 @@ export interface DesignChat {
   cancelHandoff(handoff: HandoffRecord): Promise<boolean>
   /** Pushes the verified candidate to a review branch; never the default branch. */
   publishVerified(handoff: HandoffRecord): Promise<boolean>
+  /** A follow-up turn for the coding agent in the same workspace, once its turn has ended. */
+  steerHandoff(handoff: HandoffRecord, message: string): Promise<boolean>
   /** The exact candidate that passed local verification, as a patch for the developer's repo. */
   verifiedPatch(handoff: HandoffRecord): Promise<VerifiedPatch>
   dismissError(): void
@@ -405,6 +407,10 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
       runCodingAction(approvalId, (p) => api.workflow.startHandoff(p, approvalId)),
     cancelHandoff: (handoff) =>
       runCodingAction(handoff.approvalId, (p) => api.workflow.cancel(p, handoff.handoffId)),
+    steerHandoff: (handoff, text) =>
+      runCodingAction(handoff.approvalId, (p) =>
+        api.workflow.steer(p, handoff.handoffId, text.trim())
+      ),
     publishVerified: (handoff) =>
       runCodingAction(handoff.approvalId, (p) =>
         api.workflow.publishVerified(p, handoff.handoffId)

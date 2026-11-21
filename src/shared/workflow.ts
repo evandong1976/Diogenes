@@ -177,6 +177,8 @@ export interface RunEvent {
   text: string
   /** For `tool` events: a shell command the agent ran, or that command's output. */
   shell?: 'command' | 'output'
+  /** The provider turn of the run this event belongs to. */
+  turn?: number
 }
 
 export interface CodingRunSnapshot {

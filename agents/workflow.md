@@ -40,7 +40,8 @@ Approving the same proposal twice returns the same approval.
 - `briefs(projectId, handoffId)`: per attempt, `markdown` (the workflow's brief: `codingBrief` on a start, `steerBrief`/`correctionBrief` on a follow-up) and `submitted`, the exact provider input. Both are read back from the coding run's frozen input and the stored turn (`turnPrompt` in `src/main/coding/gateway.ts`), so they match what was sent, byte for byte, after a restart too. Brief wording belongs to `src/main/workflow/brief.ts`; the provider wrapper (workspace, shell note, export step) to `turnPrompt`.
 - `candidateDiff(projectId, handoffId, attempt)`: `git show` of any materialized candidate, verified or not.
 - `publishVerified(projectId, handoffId)`: pushes the newest locally verified candidate commit to `diogenes/verified-<sha12>` on the authorized repository, without force, with the session token as a header of that one git process. It refuses unverified candidates and the default branch, and records `published` on the handoff. The fallback is `verifiedPatch` plus a manual `git am`.
-- Run events from shell activity carry `shell: 'command' | 'output'`.
+- Run events from shell activity carry `shell: 'command' | 'output'` and their provider `turn`, so the Coding tab shows each attempt's activity under its own brief.
+- The brief is written as an ordinary change to the repository's code (what the code must do, what keeps working, how it is checked), without the catalog patch or graph IDs. The provider wrapper asks the agent to use plain shell commands and to end with a short plain-language summary for the developer.
 
 ## Repository and base commit
 
