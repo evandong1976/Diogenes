@@ -26,11 +26,17 @@ export function codingEntries(
   handoffs: HandoffRecord[]
 ): CodingEntry[] {
   return approvals
-    .map((a) => ({
-      approvalId: a.approvalId,
-      label: a.packet.requiredChanges[0] ?? a.packet.targetComponentId,
-      handoff: handoffs.findLast((h) => h.approvalId === a.approvalId) ?? null
-    }))
+    .map(({ approvalId, packet }) => {
+      const summary = packet.kind === 'catalog' ? packet.plan?.summary : undefined
+      return {
+        approvalId,
+        label:
+          summary ??
+          packet.requiredChanges[0]?.replace(/ is connected$/, '') ??
+          packet.targetComponentId,
+        handoff: handoffs.findLast((h) => h.approvalId === approvalId) ?? null
+      }
+    })
     .sort((a, b) => updated(b).localeCompare(updated(a)))
 }
 
@@ -151,12 +157,13 @@ export type TraceRow =
   | { key: string; kind: 'message' | 'steer' | 'error' | 'status'; text: string }
 
 export function traceRows(events: RunEvent[]): TraceRow[] {
-  return events.map((e, i) => {
+  return events.flatMap((e, i): TraceRow[] => {
     const key = `${i}`
+    if (e.text === 'thought') return []
     if (e.kind === 'tool' && e.shell === 'output')
-      return { key, kind: 'output', text: e.text, long: e.text.split('\n').length > 8 }
-    if (e.kind === 'tool') return { key, kind: 'command', text: e.text }
-    return { key, kind: e.kind, text: e.text }
+      return [{ key, kind: 'output', text: e.text, long: e.text.split('\n').length > 8 }]
+    if (e.kind === 'tool') return [{ key, kind: 'command', text: e.text }]
+    return [{ key, kind: e.kind, text: e.text }]
   })
 }
 

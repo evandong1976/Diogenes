@@ -83,7 +83,7 @@ export function createAntigravityProvider(options: {
       id: raw.id,
       status: raw.status ?? 'unknown',
       environmentId: raw.environment_id,
-      steps: (raw.steps ?? []).map(toStep)
+      steps: (raw.steps ?? []).filter((step) => step.type !== 'thought').map(toStep)
     }
   }
 

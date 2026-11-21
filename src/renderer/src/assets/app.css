@@ -1940,35 +1940,12 @@ button.chat__attach--off:focus-visible {
   gap: var(--dg-space-5);
   padding: var(--dg-space-5);
 }
-.coding__steps {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--dg-space-2);
-}
-.coding__steps li {
-  padding-top: var(--dg-space-3);
-  border-top: 2px solid var(--dg-border);
-  color: var(--dg-text-3);
-  font-size: 11px;
-  font-weight: 600;
+.coding__status {
+  flex: none;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-.coding__steps li[data-state='done'] {
-  border-top-color: var(--dg-ok);
+.coding__speaker {
   color: var(--dg-text-2);
-}
-.coding__steps li[data-state='current'] {
-  border-top-color: var(--dg-accent);
-  color: var(--dg-text);
-}
-.coding__steps li[data-state='failed'] {
-  border-top-color: var(--dg-danger);
-  color: var(--dg-danger);
 }
 .coding__facts {
   margin: 0;
@@ -2175,10 +2152,6 @@ button.chat__attach--off:focus-visible {
   font-weight: 700;
 }
 
-.coding__brief {
-  align-self: stretch;
-  max-width: none;
-}
 .coding__label {
   font-weight: 600;
 }
@@ -2206,8 +2179,4 @@ button.chat__attach--off:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.coding > .coding__steps {
-  flex: none;
-  padding: var(--dg-space-3) var(--dg-space-5) 0;
 }

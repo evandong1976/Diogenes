@@ -123,6 +123,8 @@ export function CodingPane({ chat, focus, onFocus, hidden }: Props): React.JSX.E
     )
 
   const running = handoff?.stage === 'coding' || handoff?.stage === 'verifying'
+  const steps = codingSteps(handoff)
+  const status = steps.find((step) => step.state === 'current') ?? steps.at(-1)
   const followUp = canFollowUp(handoff)
   const busy = !!chat.codingBusy
   const canSend = followUp && !busy && !!text.trim()
@@ -148,24 +150,25 @@ export function CodingPane({ chat, focus, onFocus, hidden }: Props): React.JSX.E
           }))}
           onChange={onFocus}
         />
-      </div>
-      <ol className="coding__steps" aria-label="Progress">
-        {codingSteps(handoff).map((s) => (
-          <li
-            key={s.key}
-            data-state={s.state}
-            aria-current={s.state === 'current' ? 'step' : undefined}
+        {status && handoff && (
+          <span
+            className="coding__status dg-label"
+            role="status"
+            data-tone={
+              status.state === 'failed' ? 'danger' : status.state === 'done' ? 'ok' : 'info'
+            }
           >
-            {s.label}
-          </li>
-        ))}
-      </ol>
+            {handoff.stage === 'coding' ? 'Working' : status.label}
+          </span>
+        )}
+      </div>
 
       <ol className="chat__log" ref={logRef} onScroll={onScroll} aria-live="polite">
         {!handoff ? (
           <li className="chat__turn">
             <BriefMessage
               label="Handoff · not sent yet"
+              summary={entry.label}
               markdown={preview?.key === entry.approvalId ? preview.text : null}
             />
             <div className="chat__actions">
@@ -190,6 +193,10 @@ export function CodingPane({ chat, focus, onFocus, hidden }: Props): React.JSX.E
               <li key={r.attempt} className="chat__turn">
                 <BriefMessage
                   label={`${ORIGIN_LABEL[r.origin ?? 'start']} · attempt ${r.attempt}`}
+                  summary={
+                    r.steer ??
+                    (r.origin === 'correction' ? 'Correct the failed local checks.' : entry.label)
+                  }
                   markdown={brief?.markdown ?? null}
                   brief={brief}
                 />
@@ -282,57 +289,59 @@ export function CodingPane({ chat, focus, onFocus, hidden }: Props): React.JSX.E
 /** What the coding agent received, as a message: rendered Markdown, the source a click away. */
 function BriefMessage({
   label,
+  summary,
   markdown,
   brief
 }: {
   label: string
+  summary: string
   markdown: string | null
   brief?: SubmittedBrief
 }): React.JSX.Element {
   const [source, setSource] = useState(false)
   return (
     <div className="chat__user coding__brief">
-      <div className="coding__head">
-        <span className="chat__user-context coding__label">{label}</span>
-        {markdown && (
-          <span className="coding__tools">
-            <button
-              type="button"
-              className="dg-btn dg-btn--ghost"
-              aria-pressed={source}
-              onClick={() => setSource((s) => !s)}
-            >
-              {source ? 'Rendered' : 'Markdown'}
-            </button>
-            <Copy text={markdown} label="Copy" />
-          </span>
-        )}
-      </div>
-      {!markdown ? (
-        <p className="chat__muted">Loading the brief…</p>
-      ) : source ? (
-        <pre className="coding__pre">{markdown}</pre>
-      ) : (
-        <Markdown source={markdown} plain />
-      )}
-      {brief && (
-        <details className="chat__activity">
-          <summary>
-            <span className="chat__activity-head">
-              {brief.exact ? 'Exact provider input' : 'Reconstructed provider input'} · sha256{' '}
-              {brief.sha256.slice(0, 12)}
-              {brief.sources.length > 0 && ` · ${brief.sources.length} staged files`}
-            </span>
-          </summary>
-          <div className="chat__activity-body">
-            <div className="coding__head">
-              <span />
-              <Copy text={brief.submitted} label="Copy input" />
-            </div>
-            <pre className="coding__pre">{brief.submitted}</pre>
-          </div>
-        </details>
-      )}
+      <span className="chat__user-context coding__label">{label}</span>
+      <p>{summary}</p>
+      <details className="chat__activity">
+        <summary>Handoff Markdown</summary>
+        <div className="chat__activity-body">
+          {markdown ? (
+            <>
+              <div className="coding__tools">
+                <button
+                  type="button"
+                  className="dg-btn dg-btn--ghost"
+                  aria-pressed={source}
+                  onClick={() => setSource((s) => !s)}
+                >
+                  {source ? 'Rendered' : 'Markdown source'}
+                </button>
+                <Copy text={markdown} label="Copy Markdown" />
+              </div>
+              {source ? (
+                <pre className="coding__pre">{markdown}</pre>
+              ) : (
+                <Markdown source={markdown} plain />
+              )}
+            </>
+          ) : (
+            <p className="chat__muted">Loading the brief…</p>
+          )}
+          {brief && (
+            <details className="chat__activity">
+              <summary>
+                {brief.exact ? 'Exact provider input' : 'Reconstructed provider input'} · sha256{' '}
+                {brief.sha256.slice(0, 12)}
+              </summary>
+              <div className="chat__activity-body">
+                <Copy text={brief.submitted} label="Copy input" />
+                <pre className="coding__pre">{brief.submitted}</pre>
+              </div>
+            </details>
+          )}
+        </div>
+      </details>
     </div>
   )
 }
@@ -353,43 +362,59 @@ function AgentReply({
 }): React.JSX.Element {
   const rows = traceRows(attemptEvents(handoff, run))
   const working = latest && handoff.stage === 'coding'
+  const reply = rows.findLast((row) => row.kind === 'message')
+  const activity = rows.filter((row) => row !== reply)
+  const lastCommand = activity.findLast((row) => row.kind === 'command')
   const summary = replySummary(handoff, run)
   const evidence = latest && handoff.stage !== 'accepted' ? failureEvidence(handoff, run) : []
   return (
     <div className="chat__assistant">
-      {rows.length > 0 && (
-        <ol className="coding__trace">
-          {rows.map((row) =>
-            row.kind === 'command' ? (
-              <li key={row.key} className="coding__cmd">
-                <span aria-hidden="true">$ </span>
-                {row.text}
-              </li>
-            ) : row.kind === 'output' ? (
-              <li key={row.key}>
-                {row.long ? (
-                  <details>
-                    <summary className="chat__muted">
-                      {row.text.split('\n').length} lines of output
-                    </summary>
-                    <pre className="coding__pre">{row.text}</pre>
-                  </details>
+      <span className="coding__speaker dg-label">Coding agent</span>
+      {activity.length > 0 && (
+        <details className="chat__activity">
+          <summary>
+            <span className="chat__activity-head">
+              {working && lastCommand
+                ? `Running · ${lastCommand.text.split('\n')[0]}`
+                : `Activity · ${activity.length} steps`}
+            </span>
+          </summary>
+          <div className="chat__activity-body">
+            <ol className="coding__trace">
+              {activity.map((row) =>
+                row.kind === 'command' ? (
+                  <li key={row.key} className="coding__cmd">
+                    <span aria-hidden="true">$ </span>
+                    {row.text}
+                  </li>
+                ) : row.kind === 'output' ? (
+                  <li key={row.key}>
+                    {row.long ? (
+                      <details>
+                        <summary className="chat__muted">
+                          {row.text.split('\n').length} lines of output
+                        </summary>
+                        <pre className="coding__pre">{row.text}</pre>
+                      </details>
+                    ) : (
+                      <pre className="coding__pre">{row.text}</pre>
+                    )}
+                  </li>
+                ) : row.kind === 'message' ? (
+                  <li key={row.key}>
+                    <Markdown source={row.text} plain />
+                  </li>
                 ) : (
-                  <pre className="coding__pre">{row.text}</pre>
-                )}
-              </li>
-            ) : row.kind === 'message' ? (
-              <li key={row.key}>
-                <Markdown source={row.text} plain />
-              </li>
-            ) : (
-              <li key={row.key} data-kind={row.kind}>
-                {row.text}
-              </li>
-            )
-          )}
-        </ol>
+                  <li key={row.key} data-kind={row.kind}>
+                    {row.text}
+                  </li>
+                )
+              )}
+            </ol>
+          </div>
+        </details>
       )}
+      {reply && <Markdown source={reply.text} plain />}
       {working && (
         <p className="chat__status" data-tone="info" role="status">
           <span className="chat__pulse" aria-hidden="true" />{' '}
