@@ -8,3 +8,4 @@ design
 .claude
 .agents
 skills-lock.json
+fixtures/refund-retry-approval

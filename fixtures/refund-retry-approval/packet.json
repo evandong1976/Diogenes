@@ -1,0 +1,203 @@
+{
+  "version": 1,
+  "repository": {
+    "id": 1466713316,
+    "fullName": "evandong1976/Diogenes"
+  },
+  "baseCommit": "112de2f06ee54d077030781fc9736b9e84af95c1",
+  "catalog": {
+    "schemaVersion": 1,
+    "revision": 0,
+    "bindingPath": "fixtures/refund-retry/catalog.json"
+  },
+  "targetComponentId": "state-machine:refund-retry",
+  "beforeDigest": "ddaad283fac0bb4e6789dc45cbb78e791d87d77543f8d8b84ec5d7e4b01c6939",
+  "patch": {
+    "repositoryId": 1466713316,
+    "commitSha": "112de2f06ee54d077030781fc9736b9e84af95c1",
+    "baseRevision": 0,
+    "operations": [
+      {
+        "type": "update",
+        "node": {
+          "id": "state-machine:refund-retry",
+          "kind": "stateMachine",
+          "name": "Refund retry",
+          "resolution": "bound",
+          "properties": {
+            "behavior": {
+              "version": 1,
+              "initialState": "Ready",
+              "states": [
+                "Ready",
+                "Attempt1",
+                "Attempt2",
+                "Attempt3",
+                "Succeeded",
+                "Failed"
+              ],
+              "transitions": [
+                {
+                  "id": "start",
+                  "from": "Ready",
+                  "event": {
+                    "type": "Start"
+                  },
+                  "to": "Attempt1",
+                  "effect": {
+                    "type": "RunAttempt",
+                    "attempt": 1
+                  }
+                },
+                {
+                  "id": "attempt.1.succeeded",
+                  "from": "Attempt1",
+                  "event": {
+                    "type": "Succeeded",
+                    "attempt": 1
+                  },
+                  "to": "Succeeded",
+                  "effect": {
+                    "type": "NoEffect"
+                  }
+                },
+                {
+                  "id": "attempt.1.failed",
+                  "from": "Attempt1",
+                  "event": {
+                    "type": "Failed",
+                    "attempt": 1
+                  },
+                  "to": "Attempt2",
+                  "effect": {
+                    "type": "RunAttempt",
+                    "attempt": 2
+                  }
+                },
+                {
+                  "id": "attempt.2.succeeded",
+                  "from": "Attempt2",
+                  "event": {
+                    "type": "Succeeded",
+                    "attempt": 2
+                  },
+                  "to": "Succeeded",
+                  "effect": {
+                    "type": "NoEffect"
+                  }
+                },
+                {
+                  "id": "attempt.2.failed",
+                  "from": "Attempt2",
+                  "event": {
+                    "type": "Failed",
+                    "attempt": 2
+                  },
+                  "to": "Attempt3",
+                  "effect": {
+                    "type": "RunAttempt",
+                    "attempt": 3
+                  }
+                },
+                {
+                  "id": "attempt.3.succeeded",
+                  "from": "Attempt3",
+                  "event": {
+                    "type": "Succeeded",
+                    "attempt": 3
+                  },
+                  "to": "Succeeded",
+                  "effect": {
+                    "type": "NoEffect"
+                  }
+                },
+                {
+                  "id": "attempt.3.failed",
+                  "from": "Attempt3",
+                  "event": {
+                    "type": "Failed",
+                    "attempt": 3
+                  },
+                  "to": "Failed",
+                  "effect": {
+                    "type": "NoEffect"
+                  }
+                }
+              ]
+            }
+          },
+          "ports": [],
+          "sources": [
+            {
+              "path": "fixtures/refund-retry/reducer.bend",
+              "field": "step"
+            },
+            {
+              "path": "fixtures/refund-retry/retry.ts",
+              "field": "createRefundRetry"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "afterDigest": "a7746aa05680840a92028a7852aa7fd6dced532c5de119c014f99cb9373f6f1f",
+  "transitionIds": [
+    "start",
+    "attempt.1.succeeded",
+    "attempt.1.failed",
+    "attempt.2.succeeded",
+    "attempt.2.failed",
+    "attempt.3.succeeded",
+    "attempt.3.failed"
+  ],
+  "bindings": {
+    "root": "fixtures/refund-retry",
+    "reducer": {
+      "file": "reducer.bend",
+      "export": "step"
+    },
+    "proof": {
+      "file": "PROOF.bend"
+    },
+    "caller": {
+      "file": "retry.ts",
+      "export": "createRefundRetry"
+    }
+  },
+  "obligations": [
+    {
+      "id": "native-typecheck",
+      "scope": "Trusted strict tsc config compiles retry.ts and reducer.d.mts. Compilation only, not behavior."
+    },
+    {
+      "id": "graph-conformance",
+      "scope": "Generated reducer module agrees with the approved table on all 6 x 7 state/event pairs; createRefundRetry forwards exactly the emitted RunAttempt commands on the first-success and three-failure traces."
+    },
+    {
+      "id": "bend-law",
+      "scope": "BendTT accepts the candidate proof of LAWS.bend#conforms: step equals the approved function for every state/event pair of the generated domain."
+    }
+  ],
+  "requiredChanges": [
+    "add state Attempt3",
+    "attempt.2.failed goes to Attempt3 with RunAttempt(3)",
+    "add attempt.3.succeeded (Succeeded / NoEffect)",
+    "add attempt.3.failed (Failed / NoEffect)"
+  ],
+  "preserved": [
+    "start, attempt.1.succeeded, attempt.1.failed and attempt.2.succeeded are unchanged",
+    "every unlisted state/event pair, including all events in Succeeded and Failed, keeps the state and emits NoEffect"
+  ],
+  "openChoices": [
+    "reducer structure and helper names",
+    "logging",
+    "caller internals beyond forwarding emitted attempts",
+    "proof structure"
+  ],
+  "toolchain": {
+    "bendVersion": "bend 2.0.40",
+    "verifier": "diogenes-refund-retry-verifier/1",
+    "lawSourceDigest": "dd1299efc29be09b63338c7a8fd6ad7e32602a906f29c6e379be1c4f7a040a7b"
+  }
+}

@@ -5,6 +5,7 @@ import icon from '../../resources/icon.png?asset'
 import { registerGithubIpc } from './github'
 import { registerGeminiHandlers } from './gemini/ipc'
 import { registerIndexingIpc } from './indexing/ipc'
+import { registerWorkflowIpc } from './workflow/ipc'
 
 function createWindow(): void {
   // Create the browser window.
@@ -55,6 +56,7 @@ app.whenReady().then(() => {
   registerGithubIpc()
   registerGeminiHandlers()
   registerIndexingIpc()
+  registerWorkflowIpc()
   createWindow()
 
   app.on('activate', function () {

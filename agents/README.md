@@ -3,6 +3,7 @@
 Start here when adding an agent tool or integrating the canvas with the backend. The TypeScript contracts and Electron handlers define the runtime interface. Update this reference in the same change when those interfaces change.
 
 - [Tool catalog](tool-catalog.md) lists callable tools, inputs, outputs, and the next proposed additions.
+- [Approval → coding → verification workflow](workflow.md) defines the shared interfaces for approvals, runs, candidates and verdicts.
 - [Workflow and handoffs](handoffs.md) shows what each teammate can build against and how to check the full demo.
 - [Gemini contracts](../src/shared/gemini.ts) define the types and IPC channels shared by main, preload, and renderer.
 - [Background-job examples](../fixtures/background-job/example.json) provide sample graph, edit, and clarification responses for development without live API calls.

@@ -8,7 +8,13 @@ export interface CatalogProperties {
   operation: { protocol?: CatalogProtocol; address?: string; handlerId?: string }
   resource: { resourceType?: 'store' | 'queue' | 'topic' | 'bucket' | 'asset'; address?: string }
   dataContract: { format?: string; version?: string; symbolId?: string }
-  stateMachine: { initialState?: string; states?: string[]; transitions?: CatalogTransition[] }
+  stateMachine: {
+    initialState?: string
+    states?: string[]
+    transitions?: CatalogTransition[]
+    /** Canonical executable model when present. Older snapshots use only the descriptive fields. */
+    behavior?: RetryBehavior
+  }
   view: { route?: string }
   trigger: { schedule?: string; event?: string }
   workflow: { entryStep?: string; steps?: string[] }
@@ -22,6 +28,34 @@ export interface CatalogTransition {
   to: string
   event: string
   guard?: string
+}
+
+/** Attempt numbers in the shared retry event domain. */
+export type RetryAttemptNumber = 1 | 2 | 3
+
+export type RetryEvent =
+  { type: 'Start' } | { type: 'Succeeded' | 'Failed'; attempt: RetryAttemptNumber }
+
+export type RetryEffect = { type: 'NoEffect' } | { type: 'RunAttempt'; attempt: RetryAttemptNumber }
+
+export interface RetryTransition {
+  /** Stable across revisions so reviews and checks can name a row. */
+  id: string
+  from: string
+  event: RetryEvent
+  to: string
+  effect: RetryEffect
+}
+
+/**
+ * Versioned behavior of a retry state machine. Unlisted state/event pairs keep the state and
+ * emit NoEffect, so the transitions plus this rule define the whole step function.
+ */
+export interface RetryBehavior {
+  version: 1
+  initialState: string
+  states: string[]
+  transitions: RetryTransition[]
 }
 
 export type CatalogProtocol =
