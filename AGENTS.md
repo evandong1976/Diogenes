@@ -4,13 +4,12 @@ Electron + React + TypeScript, managed with pnpm. See `README.md` for setup and 
 
 ## UI: use the design system
 
-All renderer UI follows `design/README.md`. Read it before touching anything in `src/renderer`.
+`design/` is the only source of truth for how the UI looks. It changes often, so read it before every UI task instead of relying on memory or on this file:
 
-- Use the `--dg-*` CSS variables from `design/tokens.css` for every color, font, spacing step, radius and size. Never hardcode hex values or font names.
-- Use the existing classes before writing new CSS: `.dg-btn` (plus `--primary`, `--ghost`, `--danger`), `.dg-input`, `.dg-pill`, `.dg-kbd`, `.dg-label`, `.dg-data`, `.dg-canvas`, `.dg-node`.
-- Layout-only CSS goes in `src/renderer/src/assets/app.css`. No other stylesheets and no UI libraries.
-- Rules that are easy to break: 2px corners at most, no shadows (separate with 1px hairlines), marigold `--dg-accent` only for actions, selection and proposed changes, 4px spacing grid.
-- New tokens go in `design/tokens.json` and `design/tokens.css` together.
+1. Read `design/README.md` (rules) and `design/tokens.css` (the `--dg-*` variables and `.dg-*` classes). The pages in `design/reference/` show the intended result.
+2. Style everything with those variables and classes. Never hardcode a color, font, size or radius. If something you need is missing, add it to `design/tokens.css` and `design/tokens.json` in the same change.
+3. Layout-only CSS goes in `src/renderer/src/assets/app.css`. No other stylesheets and no UI libraries.
+4. If you change `design/`, update existing UI that uses a renamed or removed variable, class or attribute (`git grep` for it).
 
 ## Architecture
 

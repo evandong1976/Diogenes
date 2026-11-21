@@ -1,6 +1,4 @@
-/* Diogenes design tokens v0.1 — import once at the app root. */
-/* Fonts are bundled, not fetched (the app CSP blocks remote fonts): the renderer imports
-   @fontsource-variable/manrope and @fontsource/pixelify-sans in src/renderer/src/main.tsx. */
+/* Diogenes design tokens v0.2 — import once at the app root. */
 /* OffBit: drop the font files in ./fonts and uncomment.
 @font-face { font-family: "OffBit"; src: url("./fonts/OffBit-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; } */
 
@@ -23,8 +21,20 @@
   --dg-selected: #3E4A1E;
   --dg-connector: #59614B;
   --dg-grid: #181C13;
+  --dg-dot: #2E3424;
 
-  --dg-font-ui: "Manrope Variable", "Manrope", sans-serif;
+  --dg-port-http: var(--dg-accent);
+  --dg-port-data: var(--dg-info);
+  --dg-port-auth: var(--dg-warn);
+  --dg-port-event: var(--dg-ok);
+  --dg-node-radius: 4px;
+  --dg-node-header-h: 40px;
+  --dg-node-field-h: 58px;
+  --dg-node-footer-h: 36px;
+  --dg-port-size: 10px;
+  --dg-edge-w: 1.5px;
+
+  --dg-font-ui: "Manrope", sans-serif;
   --dg-font-bit: "OffBit", "Pixelify Sans", monospace;
 
   --dg-space-1: 2px; --dg-space-2: 4px; --dg-space-3: 6px; --dg-space-4: 8px;
@@ -65,6 +75,52 @@ html, body { background: var(--dg-bg); color: var(--dg-text); font: 500 12px/1.4
   linear-gradient(var(--dg-grid) 1px, transparent 1px) 0 0 / var(--dg-grid-size) var(--dg-grid-size),
   linear-gradient(90deg, var(--dg-grid) 1px, transparent 1px) 0 0 / var(--dg-grid-size) var(--dg-grid-size), var(--dg-bg); }
 
-.dg-node { background: var(--dg-surface-2); border: 1px solid var(--dg-border-strong); border-radius: var(--dg-radius-control); }
-.dg-node[data-selected="true"] { border-color: var(--dg-accent); }
-.dg-node[data-proposed="true"] { border: 1px dashed var(--dg-accent); background: rgba(242,150,43,.05); }
+/* ---------- Graph (sandbox) ---------- */
+.dg-canvas--dots { background: radial-gradient(var(--dg-dot) 1px, transparent 1.4px) 0 0 / 16px 16px, var(--dg-bg); }
+
+.dg-node { position: relative; background: var(--dg-surface-2); border: 1px solid var(--dg-border-strong);
+  border-radius: var(--dg-node-radius); color: var(--dg-text); }
+.dg-node__header { height: var(--dg-node-header-h); display: flex; align-items: center; gap: 8px; padding: 0 10px 0 12px; }
+.dg-node__title { flex: 1; min-width: 0; font: 600 13px/1 var(--dg-font-ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dg-node__metric { font: 400 10px/1 var(--dg-font-bit); color: var(--dg-ok); }
+.dg-node__desc { max-height: 36px; overflow: hidden; padding: 0 12px; font: 500 11px/1.4 var(--dg-font-ui);
+  color: var(--dg-text-2); border-bottom: 1px solid var(--dg-border); }
+.dg-node__fields { padding: 10px 0 6px; }
+.dg-field { height: var(--dg-node-field-h); box-sizing: border-box; padding: 5px 12px; }
+.dg-field__label { display: flex; align-items: center; gap: 4px; height: 14px; font: 600 11px/1 var(--dg-font-ui); }
+.dg-field__label[data-required="true"]::after { content: "*"; color: var(--dg-danger); }
+.dg-field__input { margin-top: 6px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px;
+  padding: 0 8px; background: var(--dg-bg); border: 1px solid var(--dg-border-strong); border-radius: var(--dg-radius-control);
+  font: 500 12px/1 var(--dg-font-ui); color: var(--dg-text); }
+.dg-field__input--locked { background: transparent; border-color: var(--dg-border); color: var(--dg-text-3); }
+.dg-field__input--secret { font-family: var(--dg-font-bit); letter-spacing: .1em; }
+.dg-node__footer { height: var(--dg-node-footer-h); display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  padding: 0 12px; background: var(--dg-surface-1); border-top: 1px solid var(--dg-border);
+  border-radius: 0 0 calc(var(--dg-node-radius) - 1px) calc(var(--dg-node-radius) - 1px); font: 600 11px/1 var(--dg-font-ui); }
+
+.dg-node[data-state="selected"] { border-color: var(--dg-accent); box-shadow: 0 0 0 3px rgba(242,150,43,.18); }
+.dg-node[data-state="running"]::before { content: ""; position: absolute; left: -1px; right: -1px; top: -1px; height: 2px;
+  background: var(--dg-ok); border-radius: var(--dg-node-radius) var(--dg-node-radius) 0 0; }
+.dg-node[data-state="error"] { border-color: var(--dg-danger); }
+.dg-node[data-state="error"] .dg-node__metric { color: var(--dg-danger); }
+.dg-node[data-state="proposed"] { border-style: dashed; border-color: var(--dg-accent); background: rgba(242,150,43,.04); }
+.dg-node[data-state="proposed"] .dg-node__metric { color: var(--dg-accent); }
+
+.dg-port { position: absolute; width: var(--dg-port-size); height: var(--dg-port-size); box-sizing: border-box; border-radius: 50%;
+  border: 2px solid var(--dg-port-color, var(--dg-port-data)); background: var(--dg-port-color, var(--dg-port-data));
+  box-shadow: 0 0 0 2px var(--dg-bg); }
+.dg-port--in  { left: -6px; }
+.dg-port--out { right: -6px; }
+.dg-port[data-type="http"]  { --dg-port-color: var(--dg-port-http); }
+.dg-port[data-type="data"]  { --dg-port-color: var(--dg-port-data); }
+.dg-port[data-type="auth"]  { --dg-port-color: var(--dg-port-auth); }
+.dg-port[data-type="event"] { --dg-port-color: var(--dg-port-event); }
+.dg-node[data-state="proposed"] .dg-port { background: var(--dg-bg); }
+
+/* SVG edges: <path class="dg-edge" data-type="data" d="M x1 y1 C ..."/> */
+.dg-edge { fill: none; stroke-width: var(--dg-edge-w); stroke-opacity: .85; stroke: var(--dg-port-data); }
+.dg-edge[data-type="http"]  { stroke: var(--dg-port-http); }
+.dg-edge[data-type="auth"]  { stroke: var(--dg-port-auth); }
+.dg-edge[data-type="event"] { stroke: var(--dg-port-event); }
+.dg-edge[data-proposed="true"] { stroke-dasharray: 5 4; }
+.dg-edge:hover, .dg-edge[data-active="true"] { stroke-width: 2.5px; stroke-opacity: 1; }
