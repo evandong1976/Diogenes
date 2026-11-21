@@ -1,9 +1,11 @@
 import { ipcMain } from 'electron'
 import job from '../../../fixtures/background-job/source/job.ts?raw'
 import worker from '../../../fixtures/background-job/source/worker.ts?raw'
+import verifyRetry from '../../../fixtures/background-job/verify-retry.mjs?raw'
 import { geminiChannels, type CaptureRect, type RepoRef } from '../../shared/gemini'
 import { buildArchitecture, buildRepoGraph, proposeEdit, setCurrentFiles } from './repo'
 import { createGeminiService } from './service'
+import { runManagedRetry } from './managed-agent'
 
 const fixtureFiles = [
   { path: 'job.ts', text: job },
@@ -53,6 +55,9 @@ export function registerGeminiHandlers(): void {
   )
   ipcMain.handle(geminiChannels.proposeEdit, (_event, graph: unknown, png: unknown) =>
     proposeEdit(graph, png)
+  )
+  ipcMain.handle(geminiChannels.runManagedRetry, (_event, graph: unknown, proposal: unknown) =>
+    runManagedRetry(fixtureFiles, verifyRetry, graph, proposal)
   )
   ipcMain.handle(geminiChannels.capture, async (event, rect: unknown) => {
     const image = await event.sender.capturePage(toRect(rect))

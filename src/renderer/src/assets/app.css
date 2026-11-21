@@ -238,6 +238,11 @@ a {
   border-bottom: 1px solid var(--dg-border);
   background: var(--dg-surface-1);
 }
+.managed-diff {
+  margin: var(--dg-space-4) 0 0;
+  max-block-size: 24vh;
+  overflow: auto;
+}
 .draw-layer {
   position: absolute;
   inset: 0;

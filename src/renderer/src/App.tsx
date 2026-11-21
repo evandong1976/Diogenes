@@ -12,6 +12,7 @@ const LEVELS = ['Infrastructure', 'Integrations', 'Code logic'] as const
 function App(): React.JSX.Element {
   const [user, setUser] = useState<GithubUser | null | undefined>(undefined)
   const [repo, setRepo] = useState<GithubRepo | null>(null)
+  const [exampleOpen, setExampleOpen] = useState(false)
   // Code logic opens first: it works from the saved example without any API calls.
   const [level, setLevel] = useState(2)
   // Held here so switching levels keeps each level's diagram.
@@ -36,25 +37,47 @@ function App(): React.JSX.Element {
   }
 
   if (user === undefined) return <div className="screen dg-label">Loading…</div>
-  if (!user) return <SignIn onSignedIn={setUser} />
-  if (!repo) return <RepoPicker user={user} onPick={pickRepo} onSignOut={signOut} />
+  if (!exampleOpen) {
+    if (!user) {
+      return (
+        <SignIn
+          onSignedIn={setUser}
+          onOpenExample={() => {
+            void window.api.gemini.useFixture()
+            setLogic(initialLogic)
+            setLevel(2)
+            setExampleOpen(true)
+          }}
+        />
+      )
+    }
+    if (!repo) return <RepoPicker user={user} onPick={pickRepo} onSignOut={signOut} />
+  }
 
   return (
     <div className="shell">
       <nav className="titlebar">
-        <button className="dg-btn dg-btn--ghost" onClick={() => setRepo(null)}>
-          ← {repo.fullName}
+        <button
+          className="dg-btn dg-btn--ghost"
+          onClick={() => {
+            if (exampleOpen) setExampleOpen(false)
+            else setRepo(null)
+          }}
+        >
+          ← {repo?.fullName ?? 'Back to sign in'}
         </button>
-        <div className="segmented" role="group" aria-label="Level">
-          {LEVELS.map((name, i) => (
-            <button key={name} onClick={() => setLevel(i)} aria-pressed={level === i}>
-              L{i + 1} {name}
-            </button>
-          ))}
-        </div>
+        {repo && (
+          <div className="segmented" role="group" aria-label="Level">
+            {LEVELS.map((name, i) => (
+              <button key={name} onClick={() => setLevel(i)} aria-pressed={level === i}>
+                L{i + 1} {name}
+              </button>
+            ))}
+          </div>
+        )}
       </nav>
       <main className="workspace">
-        {level === 2 ? (
+        {!repo || level === 2 ? (
           <CodeLogicLevel repo={repo} logic={logic} onLogicChange={setLogic} />
         ) : (
           <ArchitectureLevel
@@ -69,7 +92,7 @@ function App(): React.JSX.Element {
         <span>
           L{level + 1} · {LEVELS[level]}
         </span>
-        <span>{repo.defaultBranch}</span>
+        <span>{repo?.defaultBranch ?? 'Bundled example'}</span>
       </footer>
     </div>
   )

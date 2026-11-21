@@ -1,7 +1,13 @@
 import { useState } from 'react'
 import type { DeviceCode, GithubUser } from '../../preload'
 
-export function SignIn({ onSignedIn }: { onSignedIn: (u: GithubUser) => void }): React.JSX.Element {
+export function SignIn({
+  onSignedIn,
+  onOpenExample
+}: {
+  onSignedIn: (u: GithubUser) => void
+  onOpenExample: () => void
+}): React.JSX.Element {
   const [code, setCode] = useState<DeviceCode | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -49,9 +55,12 @@ export function SignIn({ onSignedIn }: { onSignedIn: (u: GithubUser) => void }):
           </div>
         </>
       ) : (
-        <div>
+        <div className="row">
           <button className="dg-btn dg-btn--primary" onClick={signIn}>
             Sign in with GitHub
+          </button>
+          <button className="dg-btn dg-btn--ghost" onClick={onOpenExample}>
+            Try example
           </button>
         </div>
       )}

@@ -10,9 +10,9 @@ import { exampleEdit, initialLogic, type LogicState } from './logic'
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
 interface Props {
-  repo: GithubRepo
+  repo: GithubRepo | null
   logic: LogicState
-  onLogicChange(next: LogicState): void
+  onLogicChange: React.Dispatch<React.SetStateAction<LogicState>>
 }
 
 export function CodeLogicLevel({ repo, logic, onLogicChange }: Props): React.JSX.Element {
@@ -24,6 +24,9 @@ export function CodeLogicLevel({ repo, logic, onLogicChange }: Props): React.JSX
   const [question, setQuestion] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const managedPending = logic.managed?.kind === 'running'
+  const blocked = !!busy || managedPending
 
   const diagram = useMemo(() => stateDiagram(logic.graph, proposal), [logic.graph, proposal])
 
@@ -48,6 +51,7 @@ export function CodeLogicLevel({ repo, logic, onLogicChange }: Props): React.JSX
 
   const buildFromRepo = (): Promise<void> =>
     run('Reading repo…', async () => {
+      if (!repo) return
       const { graph, files } = await window.api.gemini.buildRepoGraph({
         fullName: repo.fullName,
         branch: repo.defaultBranch
@@ -94,10 +98,35 @@ export function CodeLogicLevel({ repo, logic, onLogicChange }: Props): React.JSX
       graph: applyEdit(logic.graph, proposal),
       source: logic.source.endsWith('· edited') ? logic.source : `${logic.source} · edited`,
       isExample: logic.isExample,
+      approved:
+        logic.isExample && logic.source === initialLogic.source
+          ? { graph: logic.graph, edit: proposal }
+          : undefined,
       version: logic.version + 1
     })
     reset()
   }
+
+  const runManaged = async (): Promise<void> => {
+    const approved = logic.approved
+    if (!approved || managedPending) return
+    onLogicChange({ ...logic, managed: { kind: 'running' } })
+
+    try {
+      const result = await window.api.gemini.runManagedRetry(approved.graph, approved.edit)
+      onLogicChange((current) =>
+        current.approved === approved ? { ...current, managed: { kind: 'done', result } } : current
+      )
+    } catch (error) {
+      onLogicChange((current) =>
+        current.approved === approved
+          ? { ...current, managed: { kind: 'error', message: message(error) } }
+          : current
+      )
+    }
+  }
+
+  const managedResult = logic.managed?.kind === 'done' ? logic.managed.result : null
 
   return (
     <div className="level">
@@ -119,6 +148,7 @@ export function CodeLogicLevel({ repo, logic, onLogicChange }: Props): React.JSX
               <button
                 className={drawing ? 'dg-btn dg-btn--primary' : 'dg-btn'}
                 aria-pressed={drawing}
+                disabled={blocked}
                 onClick={() => setDrawing((d) => !d)}
               >
                 {drawing ? 'Drawing' : 'Draw'}
@@ -128,26 +158,33 @@ export function CodeLogicLevel({ repo, logic, onLogicChange }: Props): React.JSX
                   Clear
                 </button>
               )}
-              <button className="dg-btn" onClick={propose} disabled={!hasInk || !!busy}>
+              <button className="dg-btn" onClick={propose} disabled={!hasInk || blocked}>
                 Propose change
               </button>
               {logic.isExample && logic.source === initialLogic.source && (
-                <button className="dg-btn dg-btn--ghost" onClick={() => setProposal(exampleEdit)}>
+                <button
+                  className="dg-btn dg-btn--ghost"
+                  disabled={blocked}
+                  onClick={() => setProposal(exampleEdit)}
+                >
                   Saved proposal
                 </button>
               )}
-              <span className="toolbar-divider" />
-              {logic.isExample ? (
-                <button className="dg-btn" onClick={buildFromRepo} disabled={!!busy}>
-                  Build from {repo.fullName}
+              {logic.approved && (
+                <button className="dg-btn dg-btn--primary" onClick={runManaged} disabled={blocked}>
+                  Run managed agent
                 </button>
-              ) : (
+              )}
+              {logic.source !== initialLogic.source && (
+                <button className="dg-btn dg-btn--ghost" onClick={useExample} disabled={blocked}>
+                  {logic.isExample ? 'Reset example' : 'Example'}
+                </button>
+              )}
+              {repo && (
                 <>
-                  <button className="dg-btn dg-btn--ghost" onClick={useExample}>
-                    Example
-                  </button>
-                  <button className="dg-btn" onClick={buildFromRepo} disabled={!!busy}>
-                    Rebuild
+                  <span className="toolbar-divider" />
+                  <button className="dg-btn" onClick={buildFromRepo} disabled={blocked}>
+                    {logic.isExample ? `Build from ${repo.fullName}` : 'Rebuild'}
                   </button>
                 </>
               )}
@@ -159,6 +196,37 @@ export function CodeLogicLevel({ repo, logic, onLogicChange }: Props): React.JSX
         <p className={error ? 'notice error' : 'notice dg-data'}>
           {busy ?? error ?? `Gemini needs more detail: ${question}`}
         </p>
+      )}
+      {managedPending && (
+        <p className="notice dg-data" role="status">
+          Managed agent is editing and testing the example…
+        </p>
+      )}
+      {logic.managed?.kind === 'error' && (
+        <p className="notice error" role="alert">
+          {logic.managed.message}
+        </p>
+      )}
+      {managedResult && (
+        <section className="notice" aria-label="Managed agent result">
+          <p className="dg-label" role="status">
+            {managedResult.tests.filter((test) => test.passed).length} of{' '}
+            {managedResult.tests.length} acceptance checks passed
+          </p>
+          <ul className="dg-data">
+            {managedResult.tests.map(({ name, passed }) => (
+              <li key={name}>
+                {passed ? 'Pass' : 'Fail'} · {name}
+              </li>
+            ))}
+          </ul>
+          <details>
+            <summary>Code diff</summary>
+            <pre className="dg-data managed-diff">
+              {managedResult.diff || 'No changes returned.'}
+            </pre>
+          </details>
+        </section>
       )}
       <DiagramCanvas
         diagram={diagram}
