@@ -30,10 +30,29 @@ interface Props {
   hidden?: boolean
   /** Highlights a source file in the sidebar tree and on the canvas. */
   onOpenSource?(path: string): void
+  /** Called after "Send to coding agent" started (or reopened) the approval's handoff. */
+  onHandoffStarted?(approvalId: string): void
 }
 
 /** Source rows link to the file tree; provided once by the pane. */
 const OpenSource = createContext<((path: string) => void) | null>(null)
+const HandoffStarted = createContext<((approvalId: string) => void) | null>(null)
+
+function PaneContext({
+  openSource,
+  handoffStarted,
+  children
+}: {
+  openSource?: (path: string) => void
+  handoffStarted?: (approvalId: string) => void
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <OpenSource.Provider value={openSource ?? null}>
+      <HandoffStarted.Provider value={handoffStarted ?? null}>{children}</HandoffStarted.Provider>
+    </OpenSource.Provider>
+  )
+}
 
 const time = (iso: string): string =>
   new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
@@ -41,7 +60,13 @@ const time = (iso: string): string =>
 const MODEL_OPTIONS = DESIGN_MODELS.map((m) => ({ value: m, label: m }))
 
 /** The project's design conversation: threads, transcript, context, composer and proposals. */
-export function ChatPane({ chat, selected, hidden, onOpenSource }: Props): React.JSX.Element {
+export function ChatPane({
+  chat,
+  selected,
+  hidden,
+  onOpenSource,
+  onHandoffStarted
+}: Props): React.JSX.Element {
   const { load, draft, project, activeId, pending } = chat
   const [text, setText] = useState('')
   // The component the developer removed from the message; a new canvas selection is attached.
@@ -101,7 +126,7 @@ export function ChatPane({ chat, selected, hidden, onOpenSource }: Props): React
   }
 
   return (
-    <OpenSource.Provider value={onOpenSource ?? null}>
+    <PaneContext openSource={onOpenSource} handoffStarted={onHandoffStarted}>
       <section
         className="chat"
         id="panel-chat"
@@ -261,7 +286,7 @@ export function ChatPane({ chat, selected, hidden, onOpenSource }: Props): React
           </div>
         </form>
       </section>
-    </OpenSource.Provider>
+    </PaneContext>
   )
 }
 
@@ -610,6 +635,7 @@ function CodingHandoff({
 }): React.JSX.Element {
   const handoff = chat.handoffs.findLast((h) => h.approvalId === approvalId)
   const busy = chat.codingBusy === approvalId
+  const started = useContext(HandoffStarted)
   if (!handoff)
     return (
       <div className="chat__actions">
@@ -617,7 +643,9 @@ function CodingHandoff({
           type="button"
           className="dg-btn dg-btn--primary"
           disabled={!!chat.codingBusy}
-          onClick={() => void chat.startHandoff(approvalId)}
+          onClick={() =>
+            void chat.startHandoff(approvalId).then((ok) => ok && started?.(approvalId))
+          }
         >
           {busy ? 'Starting…' : 'Send to coding agent'}
         </button>

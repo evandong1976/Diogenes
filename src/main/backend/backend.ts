@@ -11,7 +11,8 @@
  * belongs to another project is reported as not found.
  */
 import { join } from 'node:path'
-import { CodingRunGateway } from '../coding/gateway'
+import { CodingRunGateway, turnPrompt } from '../coding/gateway'
+import { sha256 } from '../coding/candidate'
 import { CodingRunStore, type CodingRunRepository } from '../coding/store'
 import type { ManagedAgentProvider } from '../coding/provider'
 import { DesignService } from '../design/harness'
@@ -43,10 +44,12 @@ import type {
 import type { DesignTurnInput, ProjectState, VerificationReport } from '../../shared/design'
 import type {
   ApprovalRecord,
+  CandidatePublisher,
   CorrectionRequest,
   DecisionOption,
   HandoffRecord,
   ObligationId,
+  SubmittedBrief,
   Verdict
 } from '../../shared/workflow'
 
@@ -83,6 +86,8 @@ export interface BackendOptions {
    */
   repos: RepoSource
   verifiers: LocalVerifier[]
+  /** Pushes verified candidates to review branches. Absent in fixtures unless a test supplies one. */
+  publisher?: CandidatePublisher
   /** Apply pending migrations on open instead of requiring `pnpm db:migrate` first. */
   migrate?: boolean
   maxAttempts?: number
@@ -165,6 +170,7 @@ export class AgentBackend implements BackendApi {
       }),
       threads: new StoredWorkflowSink(stores.threads),
       verifiers: options.verifiers,
+      ...(options.publisher && { publisher: options.publisher }),
       ...(options.maxAttempts && { maxAttempts: options.maxAttempts })
     })
 
@@ -224,7 +230,17 @@ export class AgentBackend implements BackendApi {
         w.resolveDecision(await this.handoffIn(projectId, handoffId), option),
       verdicts: (projectId, handoffId) => this.verdicts(projectId, handoffId),
       verifiedPatch: async (projectId, handoffId) =>
-        w.verifiedPatch(await this.handoffIn(projectId, handoffId))
+        w.verifiedPatch(await this.handoffIn(projectId, handoffId)),
+      briefPreview: async (projectId, approvalId) => {
+        await this.approvalIn(projectId, approvalId)
+        return w.briefPreview(approvalId)
+      },
+      briefs: async (projectId, handoffId) =>
+        this.submittedBriefs(await this.handoffIn(projectId, handoffId)),
+      candidateDiff: async (projectId, handoffId, attempt) =>
+        w.candidateDiff(await this.handoffIn(projectId, handoffId), Number(attempt)),
+      publishVerified: async (projectId, handoffId) =>
+        w.publishVerified(await this.handoffIn(projectId, handoffId))
     }
 
     this.coding = {
@@ -240,6 +256,36 @@ export class AgentBackend implements BackendApi {
       retry: async (projectId, runId) => this.gateway().retry(await this.runIn(projectId, runId)),
       cancel: async (projectId, runId) => this.gateway().cancel(await this.runIn(projectId, runId))
     }
+  }
+
+  /**
+   * Each attempt's brief, read back from the coding run's frozen input and the turn record that
+   * holds its export token: the same bytes the provider create call carried.
+   */
+  private async submittedBriefs(handoffId: string): Promise<SubmittedBrief[]> {
+    const h = (await this.stores.workflow.handoff(handoffId))!
+    const briefs: SubmittedBrief[] = []
+    for (const r of h.runs) {
+      const [run, input] = await Promise.all([
+        this.stores.coding.read(r.run.runId),
+        this.stores.coding.input(r.run.runId)
+      ])
+      const turn = run?.turns[r.run.turn ?? 0]
+      if (!run || !input || !turn) continue
+      const submitted = turnPrompt(input, turn)
+      briefs.push({
+        attempt: r.attempt,
+        origin: r.origin ?? 'start',
+        runId: r.run.runId,
+        turn: turn.index,
+        markdown: turn.kind === 'start' ? input.handoff.intent : (turn.message ?? ''),
+        submitted,
+        sha256: sha256(submitted),
+        scope: input.handoff.scope,
+        sources: turn.kind === 'start' ? input.files.map((f) => f.path) : []
+      })
+    }
+    return briefs
   }
 
   async status(): Promise<BackendStatus> {

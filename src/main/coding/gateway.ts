@@ -273,37 +273,11 @@ export class CodingRunGateway implements CodingRunApi {
   }
 
   private request(run: CodingRunView, input: StartCodingRun, turn: CodingRunTurn): CreateTurn {
-    const finish = `When you are done, run exactly this command and confirm it printed DIOGENES_CANDIDATE_WRITTEN:\n${exportCommand(turn.exportToken)}`
-    if (turn.kind === 'start') {
-      const { handoff } = input
-      const list = (items: string[]): string =>
-        items.length ? items.map((i) => `- ${i}`).join('\n') : '- (none)'
+    if (turn.kind === 'start')
       return {
         sources: stagedSources(input.files, this.options.exportScript),
-        input: [
-          `Implement an approved design change in ${workspaceRoot}.`,
-          `It holds the in-scope files of ${handoff.repository.fullName} at commit ${handoff.baseCommit}. Other files are not supplied.`,
-          '',
-          'Requested behavior:',
-          handoff.intent,
-          '',
-          'Guarantees that must hold:',
-          list(handoff.guarantees),
-          '',
-          'Decisions you may make yourself:',
-          list(handoff.latitude),
-          '',
-          'Change only these paths:',
-          list(handoff.scope),
-          ...(handoff.acceptance
-            ? ['', `Check your work by running, from ${workspaceRoot}:`, handoff.acceptance.command]
-            : []),
-          '',
-          'Do not modify /workspace/.diogenes.',
-          finish
-        ].join('\n')
+        input: turnPrompt(input, turn)
       }
-    }
     const previous = run.turns
       .slice(0, turn.index)
       .reverse()
@@ -311,13 +285,7 @@ export class CodingRunGateway implements CodingRunApi {
     return {
       previousInteractionId: previous,
       environmentId: run.environmentId,
-      input: [
-        'Direction from the developer for the same change:',
-        turn.message ?? '',
-        '',
-        'Keep the guarantees and path limits from the original task.',
-        finish
-      ].join('\n')
+      input: turnPrompt(input, turn)
     }
   }
 
@@ -496,6 +464,53 @@ export class CodingRunGateway implements CodingRunApi {
 
 function newTurn(index: number, kind: CodingRunTurn['kind']): CodingRunTurn {
   return { index, kind, attempts: [], exportToken: randomBytes(16).toString('hex') }
+}
+
+/**
+ * The exact text a turn sends to the managed agent. Pure over the persisted run input and turn
+ * (including its stored export token), so the submitted bytes can be shown again after a restart.
+ */
+/** Plain shell in the managed workspace, one command at a time, so the trace stays readable. */
+const SHELL_NOTE = `Work with ordinary shell commands in ${workspaceRoot}, one simple command at a time: ls, cat, grep and sed to read and edit files, git status and git diff to review your change, and a focused check on the files you touched.`
+
+export function turnPrompt(input: StartCodingRun, turn: CodingRunTurn): string {
+  const finish = `When you are done, run exactly this command and confirm it printed DIOGENES_CANDIDATE_WRITTEN:\n${exportCommand(turn.exportToken)}`
+  if (turn.kind === 'start') {
+    const { handoff } = input
+    const list = (items: string[]): string =>
+      items.length ? items.map((i) => `- ${i}`).join('\n') : '- (none)'
+    return [
+      `Implement an approved design change in ${workspaceRoot}.`,
+      `It holds the in-scope files of ${handoff.repository.fullName} at commit ${handoff.baseCommit}. Other files are not supplied.`,
+      '',
+      'Requested behavior:',
+      handoff.intent,
+      '',
+      'Guarantees that must hold:',
+      list(handoff.guarantees),
+      '',
+      'Decisions you may make yourself:',
+      list(handoff.latitude),
+      '',
+      'Change only these paths:',
+      list(handoff.scope),
+      ...(handoff.acceptance
+        ? ['', `Check your work by running, from ${workspaceRoot}:`, handoff.acceptance.command]
+        : []),
+      '',
+      SHELL_NOTE,
+      'Do not modify /workspace/.diogenes.',
+      finish
+    ].join('\n')
+  }
+  return [
+    'Direction from the developer for the same change:',
+    turn.message ?? '',
+    '',
+    'Keep the guarantees and path limits from the original task.',
+    SHELL_NOTE,
+    finish
+  ].join('\n')
 }
 
 const latest = (run: CodingRunView): CodingRunTurn => run.turns.at(-1)!

@@ -155,7 +155,9 @@ function snapshot(view: CodingRunView, approvalId: string): CodingRunSnapshot {
   const events: RunEvent[] = view.activity.map((a: CodingActivity) => ({
     at: view.updatedAt,
     kind: a.kind === 'command' || a.kind === 'command_output' ? 'tool' : 'message',
-    text: a.text
+    text: a.text,
+    ...(a.kind === 'command' && { shell: 'command' as const }),
+    ...(a.kind === 'command_output' && { shell: 'output' as const })
   }))
   for (const t of view.turns) {
     if (t.kind === 'follow_up' && t.message)

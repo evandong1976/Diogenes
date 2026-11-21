@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { createBackend, type AgentBackend } from '../../src/main/backend/backend'
-import { GitMirror } from '../../src/main/backend/repos'
+import { GitMirror, pushBranch } from '../../src/main/backend/repos'
 import { createAntigravityProvider } from '../../src/main/coding/antigravity'
 import { DESIGN_MODELS } from '../../src/main/design'
 import { geminiModelClient, type ModelClient, type Part } from '../../src/main/design/model'
@@ -31,6 +31,13 @@ import type {
   ObligationVerdict
 } from '../../src/shared/workflow'
 import { FakeProvider, FakeServer, type AgentTurn } from '../coding/fakeProvider'
+import {
+  codingEntries,
+  codingSteps,
+  localLine,
+  providerLine,
+  selectEntry
+} from '../../src/renderer/src/agent/coding'
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 const fixture = join(repoRoot, 'test/fixtures/orders-ipc')
@@ -196,7 +203,9 @@ function open(
   dataDir: string,
   remoteDir: string,
   baseline: CatalogGraph,
-  server: FakeServer
+  server: FakeServer,
+  /** A scratch bare repository standing in for GitHub; fixtures never publish anywhere else. */
+  reviewRemote?: string
 ): Promise<AgentBackend> {
   return createBackend({
     env: {},
@@ -214,7 +223,15 @@ function open(
     codingProvider: () => new FakeProvider(server),
     exportScript,
     repos: new GitMirror({ root: join(dataDir, 'repos'), remoteUrl: () => `file://${remoteDir}` }),
-    verifiers: [refundRetryVerifier(), catalogVerifier()]
+    verifiers: [refundRetryVerifier(), catalogVerifier()],
+    ...(reviewRemote && {
+      publisher: {
+        async push({ gitDir, sha, branch }) {
+          await pushBranch({ gitDir, url: `file://${reviewRemote}`, sha, branch })
+          return { url: `file://${reviewRemote}#${branch}` }
+        }
+      }
+    })
   })
 }
 
@@ -442,9 +459,39 @@ describe('catalog change through handoff, correction and local verification', ()
       )
     ).toBe(base)
 
+    // Coding tab: the started approval is selected, the failed attempt keeps its evidence, and
+    // the provider's completion is never shown as the local pass.
+    const tab = (await app.workflow.getProject(PROJECT))!
+    const entry = selectEntry(codingEntries(tab.approvals, tab.handoffs), approval.approvalId)!
+    expect(entry.handoff!.handoffId).toBe(handoffId)
+    expect(codingSteps(entry.handoff).map((s) => s.state)).toEqual(['done', 'done', 'done', 'done'])
+    expect(providerLine(first).text).toMatch(/^Completed.*not a verdict$/)
+    expect(localLine(first)).toEqual({ text: '1 failed', tone: 'danger' })
+    expect(localLine(second)).toEqual({ text: 'Passed 2 of 2', tone: 'ok' })
+    // Each attempt's brief is the exact text the provider received, read back from storage.
+    const briefs = await app.workflow.briefs(PROJECT, handoffId)
+    expect(briefs.map((b) => [b.attempt, b.origin])).toEqual([
+      [1, 'start'],
+      [2, 'correction']
+    ])
+    expect(briefs.map((b) => b.submitted)).toEqual(server.requests.map((r) => r.input))
+    expect(briefs[0].markdown).toBe(await app.workflow.briefPreview(PROJECT, approval.approvalId))
+    expect(briefs[0].submitted).toContain(briefs[0].markdown)
+    expect(briefs[0].submitted).toContain('git status and git diff')
+    expect(briefs[1].markdown).toContain('Correction requested')
+    // The failed candidate is still reviewable as a diff.
+    const failedDiff = await app.workflow.candidateDiff(PROJECT, handoffId, 1)
+    expect(failedDiff).toMatchObject({
+      candidateId: first.candidate!.candidateId,
+      files: ['src/preload.ts']
+    })
+    expect(failedDiff.diff).toContain('+  // Orders for the list view.')
+
     // A fresh backend on the same data recovers the handoff, verdicts and continuation refs.
     await app.close()
-    const reopened = await open(dataDir, remoteDir, baseline, server)
+    const review = mkdtempSync(join(tmpdir(), 'dg-review-'))
+    git(review, 'clone', '-q', '--bare', remoteDir, '.')
+    const reopened = await open(dataDir, remoteDir, baseline, server, review)
     const verdicts = await reopened.workflow.verdicts(PROJECT, h.handoffId)
     expect(verdicts.map((v) => [v.candidateId, v.overall])).toEqual([
       [first.candidate!.candidateId, 'fail'],
@@ -472,6 +519,16 @@ describe('catalog change through handoff, correction and local verification', ()
         `${verified.candidateId}^{tree}`
       )
     )
+    // Publishing pushes exactly the verified commit to its own branch; main is untouched.
+    const published = (await reopened.workflow.publishVerified(PROJECT, h.handoffId)).published!
+    expect(published).toMatchObject({
+      candidateId: verified.candidateId,
+      branch: `diogenes/verified-${verified.candidateId.slice(0, 12)}`
+    })
+    expect(git(review, 'rev-parse', `refs/heads/${published.branch}`)).toBe(verified.candidateId)
+    const defaultBranch = git(remoteDir, 'symbolic-ref', '--short', 'HEAD')
+    expect(git(review, 'rev-parse', `refs/heads/${defaultBranch}`)).toBe(base)
+    expect((await reopened.workflow.getHandoff(PROJECT, h.handoffId))!.published).toEqual(published)
     const handlers = readFileSync(join(checkout, 'src/main.ts'), 'utf8')
     expect(handlers).toContain("'orders:list'")
     expect(handlers).toContain("'orders:archived'")

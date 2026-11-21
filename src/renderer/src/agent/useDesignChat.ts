@@ -63,12 +63,16 @@ export interface DesignChat {
   reload(): void
   openThread(id: string): void
   newThread(): Promise<void>
-  send(text: string, model: string, selection: SelectionCheck): Promise<boolean>
+  /** `threadId` sends into another thread than the open one (a handoff's own thread). */
+  send(text: string, model: string, selection: SelectionCheck, threadId?: string): Promise<boolean>
   cancel(): void
   approve(proposal: Proposal): Promise<void>
   discard(proposal: Proposal): Promise<void>
-  startHandoff(approvalId: string): Promise<void>
-  cancelHandoff(handoff: HandoffRecord): Promise<void>
+  /** Resolves true once the handoff started (or was already open). */
+  startHandoff(approvalId: string): Promise<boolean>
+  cancelHandoff(handoff: HandoffRecord): Promise<boolean>
+  /** Pushes the verified candidate to a review branch; never the default branch. */
+  publishVerified(handoff: HandoffRecord): Promise<boolean>
   /** The exact candidate that passed local verification, as a patch for the developer's repo. */
   verifiedPatch(handoff: HandoffRecord): Promise<VerifiedPatch>
   dismissError(): void
@@ -264,8 +268,8 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
   const runCodingAction = async (
     approvalId: string,
     action: (project: string) => Promise<HandoffRecord>
-  ): Promise<void> => {
-    if (!projectId || codingAction.current) return
+  ): Promise<boolean> => {
+    if (!projectId || codingAction.current) return false
     codingAction.current = projectId
     setCodingBusy(approvalId)
     setError(null)
@@ -273,10 +277,13 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
       const result = await action(projectId)
       if (scope.current.projectId === projectId) {
         setHandoffs((current) => updateHandoff(current, result))
-        await refresh()
+        // The action itself succeeded; a failed refresh is shown but does not undo it.
+        await refresh().catch((e) => setError(message(e)))
       }
+      return true
     } catch (e) {
       if (scope.current.projectId === projectId) setError(message(e))
+      return false
     } finally {
       codingAction.current = null
       setCodingBusy(null)
@@ -309,10 +316,11 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
       guard(async () => {
         if (projectId) await createThread(projectId)
       }),
-    send: async (text, model, selection) => {
+    send: async (text, model, selection, target) => {
       if (!projectId || !draft || pending || !text.trim()) return false
       setError(null)
-      let threadId = activeId
+      let threadId = target ?? activeId
+      if (target && target !== activeId) setActiveId(target)
       try {
         threadId ??= (await createThread(projectId)).id
       } catch (e) {
@@ -398,6 +406,10 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
       runCodingAction(approvalId, (p) => api.workflow.startHandoff(p, approvalId)),
     cancelHandoff: (handoff) =>
       runCodingAction(handoff.approvalId, (p) => api.workflow.cancel(p, handoff.handoffId)),
+    publishVerified: (handoff) =>
+      runCodingAction(handoff.approvalId, (p) =>
+        api.workflow.publishVerified(p, handoff.handoffId)
+      ),
     verifiedPatch: (handoff) =>
       api.workflow.verifiedPatch(handoff.correlation.projectId, handoff.handoffId),
     dismissError: () => setError(null)

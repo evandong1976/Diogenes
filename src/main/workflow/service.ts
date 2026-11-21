@@ -15,6 +15,8 @@ import type { CatalogPatchResult, RetryBehavior } from '../../shared/catalog'
 import type {
   ApprovalRecord,
   ApprovalRequest,
+  CandidateDiff,
+  CandidatePublisher,
   CodingGateway,
   CodingHandoff,
   CorrectionRequest,
@@ -41,6 +43,8 @@ export interface WorkflowDeps {
   gateway: CodingGateway
   threads: DesignThreadSink
   verifiers: LocalVerifier[]
+  /** Pushes a verified candidate to a review branch. Without it, publishing is refused. */
+  publisher?: CandidatePublisher
   maxAttempts?: number
   now?: () => Date
 }
@@ -266,8 +270,10 @@ export class WorkflowService implements WorkflowApi {
     }
   }
 
-  async verifiedPatch(handoffId: string): Promise<VerifiedPatch> {
-    const h = await this.require(handoffId)
+  /** The newest attempt whose local verdict passed on exactly its materialized candidate. */
+  private verifiedRun(
+    h: HandoffRecord
+  ): RunRecord & Required<Pick<RunRecord, 'candidate' | 'verdict'>> {
     const run = h.runs.findLast(
       (r) =>
         r.verdict?.overall === 'pass' &&
@@ -275,7 +281,72 @@ export class WorkflowService implements WorkflowApi {
         r.verdict.candidateId === r.candidate?.candidateId
     )
     if (!run?.candidate || !run.verdict)
-      throw new WorkflowError(`Handoff ${handoffId} has no locally verified candidate`)
+      throw new WorkflowError(`Handoff ${h.handoffId} has no locally verified candidate`)
+    return run as RunRecord & Required<Pick<RunRecord, 'candidate' | 'verdict'>>
+  }
+
+  /** The Markdown brief a start would submit for this approval. */
+  async briefPreview(approvalId: string): Promise<string> {
+    const approval = await this.store.approval(approvalId)
+    if (!approval) throw new WorkflowError(`Unknown approval ${approvalId}`)
+    return codingBrief(approval.packet)
+  }
+
+  async candidateDiff(handoffId: string, attempt: number): Promise<CandidateDiff> {
+    const h = await this.require(handoffId)
+    const run = h.runs.find((r) => r.attempt === attempt)
+    if (!run?.candidate) throw new WorkflowError(`Attempt ${attempt} has no candidate`)
+    const { packet } = (await this.store.approval(h.approvalId))!
+    const { candidateId, files, deleted } = run.candidate
+    return {
+      attempt,
+      candidateId,
+      baseCommit: packet.baseCommit,
+      files,
+      deleted,
+      diff: git(this.candidates(h).dir, [
+        'show',
+        '--format=',
+        '--no-color',
+        '--no-ext-diff',
+        candidateId
+      ])
+    }
+  }
+
+  /**
+   * Pushes the verified candidate commit to its own branch. Only a candidate that passed every
+   * local obligation is published; the default branch is never named.
+   */
+  publishVerified(handoffId: string): Promise<HandoffRecord> {
+    return this.locked(handoffId, async () => {
+      const h = await this.require(handoffId)
+      const { candidate } = this.verifiedRun(h)
+      if (h.published?.candidateId === candidate.candidateId) return h
+      if (!this.deps.publisher) throw new WorkflowError('Publishing is not configured')
+      const { packet } = (await this.store.approval(h.approvalId))!
+      const branch = `diogenes/verified-${candidate.candidateId.slice(0, 12)}`
+      const { url } = await this.deps.publisher.push({
+        projectId: h.correlation.projectId,
+        repository: packet.repository.fullName,
+        gitDir: this.candidates(h).dir,
+        sha: candidate.candidateId,
+        branch
+      })
+      h.published = {
+        candidateId: candidate.candidateId,
+        repository: packet.repository.fullName,
+        branch,
+        url,
+        publishedAt: this.now()
+      }
+      return this.save(h)
+    })
+  }
+
+  async verifiedPatch(handoffId: string): Promise<VerifiedPatch> {
+    const h = await this.require(handoffId)
+    const run = this.verifiedRun(h)
     const { candidate, verdict } = run
     const { packet } = (await this.store.approval(h.approvalId))!
     return {

@@ -103,3 +103,41 @@ function hasCommit(dir: string, sha: string): boolean {
     return false
   }
 }
+
+const BRANCH = /^diogenes\/[a-z0-9][a-z0-9-]{0,62}$/
+
+/**
+ * Pushes one commit to a new branch, without force: an existing branch at another commit is
+ * rejected by the remote. `authHeader` reaches only this git process, as in `GitMirror`.
+ */
+export async function pushBranch(input: {
+  gitDir: string
+  url: string
+  sha: string
+  branch: string
+  authHeader?: string | null
+  authScope?: string
+}): Promise<void> {
+  const { gitDir, url, sha, branch, authHeader } = input
+  if (!SHA.test(sha)) throw new Error(`${sha} is not a full commit SHA.`)
+  if (!BRANCH.test(branch)) throw new Error(`${branch} is not a Diogenes review branch.`)
+  const scope = input.authScope ?? 'https://github.com/'
+  const env = minimalEnv(
+    authHeader
+      ? {
+          GIT_CONFIG_COUNT: '1',
+          GIT_CONFIG_KEY_0: `http.${scope}.extraheader`,
+          GIT_CONFIG_VALUE_0: authHeader
+        }
+      : {}
+  )
+  await new Promise<void>((resolve, reject) =>
+    execFile(
+      'git',
+      ['push', '--quiet', '--no-verify', '--', url, `${sha}:refs/heads/${branch}`],
+      { cwd: gitDir, env, timeout: 300_000, maxBuffer: 1 << 20 },
+      (error, _stdout, stderr) =>
+        error ? reject(new Error(`Could not push ${branch}: ${String(stderr).trim()}`)) : resolve()
+    )
+  )
+}

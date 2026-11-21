@@ -155,6 +155,8 @@ export interface RunEvent {
   at: string
   kind: 'status' | 'message' | 'tool' | 'steer' | 'error'
   text: string
+  /** For `tool` events: a shell command the agent ran, or that command's output. */
+  shell?: 'command' | 'output'
 }
 
 export interface CodingRunSnapshot {
@@ -344,6 +346,8 @@ export interface HandoffRecord {
   decision?: Extract<ThreadMessage, { kind: 'decision' }>
   /** Thread posts that failed. The state stays queryable; delivery can be retried. */
   undelivered: ThreadMessage[]
+  /** Set once the verified candidate was pushed to a review branch. Never the default branch. */
+  published?: PublishedCandidate
   createdAt: string
   updatedAt: string
 }
@@ -359,6 +363,57 @@ export interface VerifiedPatch {
   verifiedAt: string
   /** `git format-patch` of the candidate commit; `git am` applies it on `baseCommit`. */
   patch: string
+}
+
+/**
+ * What one attempt actually sent to the managed coding agent, read back from the persisted run
+ * input and turn. `markdown` is the workflow's own brief for the attempt (`codingBrief` for a start,
+ * `steerBrief`/`correctionBrief` for a follow-up); `submitted` is the exact provider input that
+ * wraps it, byte for byte, and `sha256` is its digest.
+ */
+export interface SubmittedBrief {
+  attempt: number
+  origin: NonNullable<RunRecord['origin']>
+  runId: string
+  turn: number
+  markdown: string
+  submitted: string
+  sha256: string
+  /** Paths the attempt may change. */
+  scope: string[]
+  /** Files staged into the workspace at the base commit (start turns only). */
+  sources: string[]
+}
+
+/** A materialized candidate commit as a reviewable diff. Verification is reported separately. */
+export interface CandidateDiff {
+  attempt: number
+  candidateId: string
+  baseCommit: string
+  files: string[]
+  deleted: string[]
+  /** `git show` of the candidate commit against its base. */
+  diff: string
+}
+
+/** The verified candidate commit pushed to a branch of the authorized repository. */
+export interface PublishedCandidate {
+  candidateId: string
+  repository: string
+  branch: string
+  url: string
+  publishedAt: string
+}
+
+/** Pushes a commit to a new branch. Implementations refuse the repository's default branch. */
+export interface CandidatePublisher {
+  push(input: {
+    projectId: string
+    repository: string
+    gitDir: string
+    sha: string
+    branch: string
+  }): Promise<{ url: string }>
 }
 
 export interface ProjectWorkflowState {

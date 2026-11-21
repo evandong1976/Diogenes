@@ -188,7 +188,7 @@ export interface Panes {
   left: boolean
   inspector: boolean
   /** What the left pane shows, so its toggle can say what it reopens. */
-  leftTab: 'chat' | 'project'
+  leftTab: 'chat' | 'coding' | 'project'
   setLeft(open: boolean): void
   setInspector(open: boolean): void
 }
