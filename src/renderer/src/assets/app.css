@@ -524,6 +524,14 @@ a {
 .pane-toggle:hover {
   background: var(--dg-surface-3);
 }
+.level-empty {
+  position: relative;
+}
+.level-empty__panes {
+  position: absolute;
+  top: var(--dg-space-4);
+  left: var(--dg-space-4);
+}
 .inspector__head {
   display: flex;
   align-items: center;

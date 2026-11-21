@@ -3,6 +3,7 @@ import type { GithubRepo } from '../../../preload'
 import type { AppFlow } from '../../../shared/gemini'
 import type { IndexStatus } from '../../../shared/indexing'
 import { AppCanvas } from './AppCanvas'
+import { PaneToggle } from './PaneToggle'
 import { EXAMPLE_FLOW, type Box, type FlowDraft } from './flow'
 import { indexRunning } from './indexStatus'
 
@@ -98,6 +99,9 @@ export function AppLevel({
         />
       ) : (
         <div className="dg-canvas--dots canvas-empty level-empty">
+          <div className="level-empty__panes">
+            <PaneToggle side="left" />
+          </div>
           <span className="dg-label">
             {busy || waiting ? `Reading ${repo?.fullName}…` : 'No map yet.'}
           </span>
