@@ -8,6 +8,7 @@ import {
 
 const base = 'https://generativelanguage.googleapis.com/v1beta'
 const agent = 'antigravity-preview-09-2026'
+const defaultTurnTokenBudget = 180_000
 
 interface RawStep {
   type?: string
@@ -108,7 +109,7 @@ export function createAntigravityProvider(options: {
         agent_config: {
           type: 'antigravity',
           model: options.model ?? 'gemini-4-carbon',
-          max_total_tokens: options.maxTotalTokens ?? 60_000
+          max_total_tokens: options.maxTotalTokens ?? defaultTurnTokenBudget
         },
         environment,
         // Tools are not carried over by previous_interaction_id; send them every turn.

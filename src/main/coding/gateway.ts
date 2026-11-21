@@ -399,7 +399,13 @@ export class CodingRunGateway implements CodingRunApi {
         run.phase = 'expired'
         return
       }
-      run.candidate = { status: 'missing', reason: 'The agent did not export a candidate.' }
+      run.candidate = {
+        status: 'missing',
+        reason:
+          interaction.status === 'incomplete'
+            ? 'The coding agent reached its token budget before exporting changes. Send a follow-up to continue in the same workspace.'
+            : 'The agent did not export a candidate.'
+      }
       return settle()
     }
     const parsed = parseCandidate(file, {
