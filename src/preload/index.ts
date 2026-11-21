@@ -14,11 +14,19 @@ export type GithubRepo = {
 
 const gemini: DiogenesApi['gemini'] = {
   buildCurrentGraph: () => ipcRenderer.invoke(geminiChannels.buildCurrentGraph),
+  useFixture: () => ipcRenderer.invoke(geminiChannels.useFixture),
+  buildRepoGraph: (repo) => ipcRenderer.invoke(geminiChannels.buildRepoGraph, repo),
+  buildArchitecture: (repo) => ipcRenderer.invoke(geminiChannels.buildArchitecture, repo),
   proposeEdit: (graph, png) => ipcRenderer.invoke(geminiChannels.proposeEdit, graph, png)
+}
+
+const canvas: DiogenesApi['canvas'] = {
+  capture: (rect) => ipcRenderer.invoke(geminiChannels.capture, rect)
 }
 
 const api = {
   gemini,
+  canvas,
   github: {
     getUser: (): Promise<GithubUser | null> => ipcRenderer.invoke('github:getUser'),
     startLogin: (): Promise<DeviceCode> => ipcRenderer.invoke('github:startLogin'),

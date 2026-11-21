@@ -2,15 +2,28 @@ import { useEffect, useState } from 'react'
 import type { GithubRepo, GithubUser } from '../../preload'
 import { SignIn } from './SignIn'
 import { RepoPicker } from './RepoPicker'
+import type { Architecture } from '../../shared/gemini'
 import { CodeLogicLevel } from './canvas/CodeLogicLevel'
+import { initialLogic, type LogicState } from './canvas/logic'
+import { ArchitectureLevel } from './canvas/ArchitectureLevel'
 
 const LEVELS = ['Infrastructure', 'Integrations', 'Code logic'] as const
 
 function App(): React.JSX.Element {
   const [user, setUser] = useState<GithubUser | null | undefined>(undefined)
   const [repo, setRepo] = useState<GithubRepo | null>(null)
-  // Code logic is the only level with data so far.
+  // Code logic opens first: it works from the saved example without any API calls.
   const [level, setLevel] = useState(2)
+  // Held here so switching levels keeps each level's diagram.
+  const [logic, setLogic] = useState<LogicState>(initialLogic)
+  const [architecture, setArchitecture] = useState<Architecture | null>(null)
+
+  const pickRepo = (next: GithubRepo): void => {
+    window.api.gemini.useFixture()
+    setLogic(initialLogic)
+    setArchitecture(null)
+    setRepo(next)
+  }
 
   useEffect(() => {
     window.api.github.getUser().then(setUser, () => setUser(null))
@@ -24,7 +37,7 @@ function App(): React.JSX.Element {
 
   if (user === undefined) return <div className="screen dg-label">Loading…</div>
   if (!user) return <SignIn onSignedIn={setUser} />
-  if (!repo) return <RepoPicker user={user} onPick={setRepo} onSignOut={signOut} />
+  if (!repo) return <RepoPicker user={user} onPick={pickRepo} onSignOut={signOut} />
 
   return (
     <div className="shell">
@@ -40,15 +53,18 @@ function App(): React.JSX.Element {
           ))}
         </div>
       </nav>
-      {level === 2 ? (
-        <main className="workspace">
-          <CodeLogicLevel />
-        </main>
-      ) : (
-        <main className="dg-canvas canvas-empty">
-          <span className="dg-label">Nothing parsed yet</span>
-        </main>
-      )}
+      <main className="workspace">
+        {level === 2 ? (
+          <CodeLogicLevel repo={repo} logic={logic} onLogicChange={setLogic} />
+        ) : (
+          <ArchitectureLevel
+            repo={repo}
+            level={level === 0 ? 'infrastructure' : 'integrations'}
+            architecture={architecture}
+            onArchitectureChange={setArchitecture}
+          />
+        )}
+      </main>
       <footer className="statusbar dg-data">
         <span>
           L{level + 1} · {LEVELS[level]}

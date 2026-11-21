@@ -1,11 +1,19 @@
-import type { CurrentGraph, GraphState, GraphTransition, ProposalResult } from '../../shared/gemini'
+import {
+  componentTypes,
+  type Architecture,
+  type ArchitectureGraph,
+  type CurrentGraph,
+  type GraphState,
+  type GraphTransition,
+  type ProposalResult
+} from '../../shared/gemini.ts' // .ts so scripts/prove-gemini.ts runs on plain Node
 
 export interface FixtureSource {
   path: string
   text: string
 }
 
-type Schema =
+export type Schema =
   | { type: 'string'; enum?: string[] }
   | { type: 'integer'; minimum: number }
   | { type: 'array'; items: Schema; minItems: number; maxItems: number }
@@ -166,6 +174,92 @@ export function validateProposal(value: unknown, graph: CurrentGraph): ProposalR
     !reachable.has(target.to) ||
     !result.addStates.every(({ id }) => reachable.has(id)) ||
     !result.addTransitions.every(({ from }) => reachable.has(from))
+  ) {
+    throw error
+  }
+  return result
+}
+
+// ---- Any repository ----
+// The fixture checks above pin exact IDs. These check structure only, so they work for any repo.
+
+export const repoGraphSchema = object({
+  initialStateId: string,
+  states: array(object({ ...state, sources: array(source, 1, 4) }), 2, 20),
+  transitions: array(object({ ...transition, sources: array(source, 1, 4) }), 1, 40)
+})
+
+// Graphs coming back from the canvas may hold approved edits that have no code yet.
+const editedGraphSchema = object({
+  initialStateId: string,
+  states: array(object({ ...state, sources: array(source, 0, 4) }), 1, 40),
+  transitions: array(object({ ...transition, sources: array(source, 0, 4) }), 0, 80)
+})
+
+/** Structural checks that hold for any repository's state graph. */
+export function validateRepoGraph(
+  value: unknown,
+  files: FixtureSource[],
+  { allowMissingSources = false } = {}
+): CurrentGraph {
+  const error = new Error('State graph failed server validation.')
+  if (!matches(value, allowMissingSources ? editedGraphSchema : repoGraphSchema)) throw error
+  const graph = value as CurrentGraph
+  const lineCounts = new Map(
+    files.map(({ path, text }) => [path, text.trimEnd().split(/\r?\n/).length])
+  )
+  if (
+    !graph.states.some(({ id }) => id === graph.initialStateId) ||
+    !validTransitions(graph.states, graph.transitions) ||
+    ![...graph.states, ...graph.transitions].every(({ sources }) =>
+      sources.every(
+        ({ path, startLine, endLine }) =>
+          startLine <= endLine && endLine <= (lineCounts.get(path) ?? 0)
+      )
+    )
+  ) {
+    throw error
+  }
+  return graph
+}
+
+const component = object({
+  id: string,
+  type: { type: 'string', enum: [...componentTypes] },
+  label: string,
+  detail: string,
+  paths: array(string, 0, 4)
+})
+const connection = object({ id: string, from: string, to: string, label: string })
+const architectureGraph = object({
+  components: array(component, 0, 16),
+  connections: array(connection, 0, 32)
+})
+
+export const architectureSchema = object({
+  infrastructure: architectureGraph,
+  integrations: architectureGraph
+})
+
+function validArchitectureGraph(graph: ArchitectureGraph, paths: Set<string>): boolean {
+  const ids = new Set(graph.components.map(({ id }) => id))
+  const connectionIds = new Set(graph.connections.map(({ id }) => id))
+  return (
+    ids.size === graph.components.length &&
+    connectionIds.size === graph.connections.length &&
+    graph.connections.every(({ from, to }) => ids.has(from) && ids.has(to) && from !== to) &&
+    graph.components.every((c) => c.paths.every((p) => paths.has(p)))
+  )
+}
+
+/** `paths` is every file path in the repo tree that was shown to Gemini. */
+export function validateArchitecture(value: unknown, paths: Set<string>): Architecture {
+  const error = new Error('Architecture failed server validation.')
+  if (!matches(value, architectureSchema)) throw error
+  const result = value as Architecture
+  if (
+    !validArchitectureGraph(result.infrastructure, paths) ||
+    !validArchitectureGraph(result.integrations, paths)
   ) {
     throw error
   }

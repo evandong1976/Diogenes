@@ -134,6 +134,37 @@ async function listRepos(): Promise<GithubRepo[]> {
   }))
 }
 
+export interface TreeFile {
+  path: string
+  size: number
+}
+
+const encodePath = (path: string): string => path.split('/').map(encodeURIComponent).join('/')
+
+/** Every file in the repo at `branch`. Large repos may come back truncated by GitHub. */
+export async function getRepoTree(fullName: string, branch: string): Promise<TreeFile[]> {
+  const tree = await githubApi<{ tree: { path: string; type: string; size?: number }[] }>(
+    `/repos/${fullName}/git/trees/${encodeURIComponent(branch)}?recursive=1`
+  )
+  return tree.tree
+    .filter((entry) => entry.type === 'blob')
+    .map((entry) => ({ path: entry.path, size: entry.size ?? 0 }))
+}
+
+export async function getFileText(fullName: string, branch: string, path: string): Promise<string> {
+  const res = await fetch(
+    `https://api.github.com/repos/${fullName}/contents/${encodePath(path)}?ref=${encodeURIComponent(branch)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${await loadToken()}`,
+        Accept: 'application/vnd.github.raw+json'
+      }
+    }
+  )
+  if (!res.ok) throw new Error(`GitHub API ${res.status} reading ${path}`)
+  return res.text()
+}
+
 export function registerGithubIpc(): void {
   ipcMain.handle('github:getUser', getUser)
   ipcMain.handle('github:startLogin', startLogin)

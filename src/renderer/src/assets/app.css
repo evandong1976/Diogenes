@@ -158,6 +158,7 @@ a {
   display: flex;
 }
 .canvas {
+  position: relative;
   flex: 1;
   min-width: 0;
 }
@@ -188,22 +189,22 @@ a {
   flex-direction: column;
   gap: var(--dg-space-2);
 }
-.state-node {
+.diagram-node {
   min-width: 152px;
   padding: var(--dg-space-3) var(--dg-space-4);
   display: flex;
   flex-direction: column;
   gap: var(--dg-space-2);
 }
-.state-node-header {
+.diagram-node-header {
   display: flex;
   justify-content: space-between;
   gap: var(--dg-space-4);
 }
-.state-node-name {
+.diagram-node-name {
   font: 600 13px/1.2 var(--dg-font-ui);
 }
-.state-node .react-flow__handle {
+.diagram-node .react-flow__handle {
   width: 6px;
   height: 6px;
   min-width: 0;
@@ -211,4 +212,41 @@ a {
   border-radius: 0;
   border: 1px solid var(--dg-border-strong);
   background: var(--dg-surface-3);
+}
+
+.diagram-node {
+  max-width: 220px;
+}
+.diagram-node-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.canvas > .canvas-empty {
+  height: 100%;
+}
+.level-empty {
+  flex: 1;
+}
+.toolbar-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--dg-border);
+}
+.notice {
+  padding: var(--dg-space-3) var(--dg-space-4);
+  border-bottom: 1px solid var(--dg-border);
+  background: var(--dg-surface-1);
+}
+.draw-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
+}
+.draw-layer[data-active] {
+  pointer-events: auto;
+  cursor: crosshair;
 }
