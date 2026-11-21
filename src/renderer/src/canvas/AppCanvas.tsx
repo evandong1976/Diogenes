@@ -385,6 +385,8 @@ export function AppCanvas({
             nodeTypes={nodeTypes}
             forceColorMode="dark"
             fitView
+            // The default 50% floor can't fit a 4-column map beside the chat pane.
+            minZoom={0.2}
             fitViewOptions={{ padding: { top: '72px', x: '32px', bottom: '32px' }, maxZoom: 1 }}
             onInit={setRf}
             onNodesChange={onNodesChange}
