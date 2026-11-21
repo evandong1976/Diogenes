@@ -140,9 +140,46 @@ async function oauthPost(path: string, body: Record<string, string>): Promise<OA
   return res.json()
 }
 
+// ponytail: publishable key + open RLS, hackathon only. Anyone with the key can overwrite rows.
+function saveProfile(u: {
+  id: number
+  login: string
+  name: string | null
+  avatar_url: string
+}): void {
+  const url = import.meta.env.MAIN_VITE_SUPABASE_URL
+  const key = import.meta.env.MAIN_VITE_SUPABASE_KEY
+  if (!url || !key) return
+  fetch(`${url}/rest/v1/profiles?on_conflict=github_id`, {
+    method: 'POST',
+    headers: {
+      apikey: key,
+      'Content-Type': 'application/json',
+      Prefer: 'resolution=merge-duplicates,return=minimal'
+    },
+    body: JSON.stringify({
+      github_id: u.id,
+      github_login: u.login,
+      name: u.name,
+      avatar_url: u.avatar_url,
+      last_seen_at: new Date().toISOString()
+    })
+  })
+    .then(
+      async (r) => r.ok || console.error('Supabase profile save failed', r.status, await r.text())
+    )
+    .catch((e) => console.error('Supabase profile save failed', e))
+}
+
 async function getUser(): Promise<GithubUser | null> {
   if (!(await loadToken())) return null
-  const u = await githubApi<{ login: string; name: string | null }>('/user')
+  const u = await githubApi<{
+    id: number
+    login: string
+    name: string | null
+    avatar_url: string
+  }>('/user')
+  saveProfile(u) // fire and forget: sign-in shouldn't wait on or fail because of Supabase
   return { login: u.login, name: u.name }
 }
 
