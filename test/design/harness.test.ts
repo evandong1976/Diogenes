@@ -256,4 +256,64 @@ describe('DesignService', () => {
     expect(reopened.draft!.revision).toBe(0)
     expect(reopened.proposals).toEqual([])
   })
+  it('proposes whiteboard edits from a pinned note without a catalog selection', async () => {
+    const whiteboard = {
+      boxes: [
+        { id: 'web', kind: 'screen', name: 'Web app', summary: '', tables: [], paths: [] },
+        {
+          id: 'supabase-postgres',
+          kind: 'data',
+          name: 'Supabase Postgres',
+          summary: 'Stores users.',
+          tables: ['profiles'],
+          paths: ['src/refunds.ts']
+        }
+      ],
+      links: [{ id: 'web->supabase-postgres', from: 'web', to: 'supabase-postgres', label: 'SQL' }],
+      notes: [{ text: 'Use Firebase instead of Supabase', target: 'supabase-postgres' }]
+    }
+    const swap = {
+      summary: 'Replace Supabase Postgres with Firebase Firestore and point the web app at it.',
+      addBoxes: [{ id: 'firebase', kind: 'data', name: 'Firebase Firestore', tables: ['profiles'] }],
+      removeBoxIds: ['supabase-postgres'],
+      addLinks: [{ from: 'web', to: 'firebase', label: 'SDK' }]
+    }
+    const model = scriptedModel([
+      () => [call('read_box_file', { boxId: 'supabase-postgres' })],
+      // An arrow to a box that's being removed is rejected; the agent fixes it.
+      () => [call('propose_whiteboard_edit', { ...swap, addLinks: [{ from: 'web', to: 'supabase-postgres' }] })],
+      () => [call('propose_whiteboard_edit', swap)],
+      () => [{ text: 'I proposed swapping the database box for Firebase.' }]
+    ])
+    const service = make(model)
+    await service.openProject('refunds', 42)
+    const result = await service.startTurn({
+      projectId: 'refunds',
+      threadId: 'thread-wb',
+      model: 'gemini-4-carbon',
+      graph: { repositoryId: 42, commitSha: 'a'.repeat(40), revision: 0 },
+      message: '- On "Supabase Postgres": Use Firebase instead of Supabase',
+      whiteboard: whiteboard as never
+    })
+
+    expect(result.status).toBe('completed')
+    expect(result.selection).toEqual({ status: 'none' })
+    expect(result.toolCalls.map((t) => [t.name, t.ok])).toEqual([
+      ['read_box_file', true],
+      ['propose_whiteboard_edit', false],
+      ['propose_whiteboard_edit', true]
+    ])
+    expect(result.whiteboardEdit).toMatchObject({
+      removeBoxIds: ['supabase-postgres'],
+      addBoxes: [{ id: 'firebase', kind: 'data', name: 'Firebase Firestore', summary: '' }],
+      addLinks: [{ from: 'web', to: 'firebase', label: 'SDK' }]
+    })
+    // The model saw the whiteboard (with its note) and the box's file.
+    const first = model.requests[0].contents.at(-1)!.parts[0].text!
+    expect(first).toContain('"id":"supabase-postgres"')
+    expect(first).toContain('Use Firebase instead of Supabase')
+    expect(result.evidence[0]).toMatchObject({ entityId: 'supabase-postgres', path: 'src/refunds.ts' })
+    // Whiteboard edits never touch the catalog draft.
+    expect((await service.getProject('refunds')).draft!.revision).toBe(0)
+  })
 })

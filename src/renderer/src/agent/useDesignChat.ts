@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DesignApproval } from '../../../shared/backend'
-import type { DraftState, Proposal, ProjectState } from '../../../shared/design'
+import type { DraftState, Proposal, ProjectState, WhiteboardSnapshot } from '../../../shared/design'
 import type { ThreadEvent, ThreadSummary } from '../../../shared/threads'
 import type { ApprovalRecord } from '../../../shared/workflow'
 import { runningTurn, turnInput, type SelectionCheck } from './chat'
@@ -54,7 +54,12 @@ export interface DesignChat {
   reload(): void
   openThread(id: string): void
   newThread(): Promise<void>
-  send(text: string, model: string, selection: SelectionCheck): Promise<boolean>
+  send(
+    text: string,
+    model: string,
+    selection: SelectionCheck,
+    whiteboard?: WhiteboardSnapshot | null
+  ): Promise<boolean>
   cancel(): void
   approve(proposal: Proposal): Promise<void>
   discard(proposal: Proposal): Promise<void>
@@ -230,7 +235,7 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
       guard(async () => {
         if (projectId) await createThread(projectId)
       }),
-    send: async (text, model, selection) => {
+    send: async (text, model, selection, whiteboard) => {
       if (!projectId || !draft || pending || !text.trim()) return false
       setError(null)
       let threadId = activeId
@@ -243,7 +248,7 @@ export function useDesignChat(projectId: string | null, indexedSha: string | nul
       setPending({ threadId, text: text.trim(), model, selection })
       try {
         const result = await api.design.startTurn(
-          turnInput({ projectId, threadId, model, draft, message: text, selection })
+          turnInput({ projectId, threadId, model, draft, message: text, selection, whiteboard })
         )
         setSent((s) => ({ ...s, [result.turn.id]: text.trim() }))
         if (result.correctionError) setError(`Correction not forwarded: ${result.correctionError}`)

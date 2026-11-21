@@ -13,6 +13,7 @@
   --dg-text-2: #A9AB98;
   --dg-text-3: #80836F;
   --dg-accent: #F2962B;
+  --dg-accent-soft: rgba(242,150,43,.12);
   --dg-on-accent: #0B0D09;
   --dg-warn: #F2C94C;
   --dg-danger: #E0662A;

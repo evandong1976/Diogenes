@@ -252,7 +252,8 @@ function editableScope(
 const isRepoPath = (p: string): boolean =>
   !!p && !posix.isAbsolute(p) && posix.normalize(p) === p && !p.split('/').includes('..')
 
-function contextFor(repoDir: string, base: string, scope: string[]): SourceContext[] {
+/** Source under `scope` at `base`, for the coding agent. Refuses scopes too large to hand over. */
+export function contextFor(repoDir: string, base: string, scope: string[]): SourceContext[] {
   const out: SourceContext[] = []
   let total = 0
   for (const entry of scope) {

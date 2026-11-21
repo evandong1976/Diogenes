@@ -208,6 +208,7 @@ export class AgentBackend implements BackendApi {
         await this.approvalIn(projectId, approvalId)
         return w.startHandoff(approvalId)
       },
+      buildWhiteboard: (projectId, turnId) => this.buildWhiteboard(projectId, text(turnId)),
       getHandoff: async (projectId, handoffId) => {
         await this.authorize(projectId)
         const h = await stores.workflow.handoff(handoffId)
@@ -316,6 +317,39 @@ export class AgentBackend implements BackendApi {
     } catch (error) {
       return { design, approval: null, approvalError: (error as Error).message }
     }
+  }
+
+  /**
+   * The whiteboard edit a design turn proposed, frozen with the board it was proposed against and
+   * sent to a coding run. Both come from the stored turn, never from the renderer.
+   */
+  private async buildWhiteboard(
+    projectId: string,
+    turnId: string
+  ): Promise<{ approval: ApprovalRecord; handoff: HandoffRecord }> {
+    const access = await this.authorize(projectId)
+    const state = await this.designService.getProject(projectId)
+    const turn = state.turns.find((t) => t.id === turnId)
+    if (!turn?.whiteboardEdit || !turn.whiteboardBase)
+      throw new NotFoundError(`Turn ${turnId} proposed no whiteboard change.`)
+    // The commit the whiteboard and the turn were read at.
+    const base = turn.graph.commitSha
+    await this.options.repos.ensure(projectId, access.repository.fullName, base)
+    const approval = await this.workflowService.approveWhiteboard({
+      correlation: {
+        projectId,
+        threadId: turn.threadId,
+        draftId: `draft:${access.repository.id}@${base}`,
+        proposalId: `whiteboard:${turn.id}`
+      },
+      repository: access.repository,
+      baseCommit: base,
+      edit: turn.whiteboardEdit,
+      whiteboard: turn.whiteboardBase,
+      approvedBy: access.account
+    })
+    const handoff = await this.workflowService.startHandoff(approval.approvalId)
+    return { approval, handoff }
   }
 
   /** The design agent's correction, forwarded to the handoff of the same approved proposal. */

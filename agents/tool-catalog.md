@@ -49,14 +49,18 @@ Types are in [src/shared/indexing.ts](../src/shared/indexing.ts). The main proce
 
 The model sees these tools. All run locally against the draft the turn was given.
 
-| Tool                 | Effect                                                                                                                       |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `inspect_component`  | A component's kind, ports, cited sources, and direct connections.                                                            |
-| `follow_connections` | Connections and components up to 3 hops in, out, or both.                                                                    |
-| `read_source`        | The cited source excerpt at the draft commit. It is recorded as evidence and returns an `evidenceId`.                        |
-| `propose_graph_edit` | Validates a `CatalogPatch` with `applyCatalogPatch`. It records a pending proposal with a preview, or returns the rejection. |
-| `read_verification`  | The latest `VerificationReport` for an approved intent in the thread.                                                        |
-| `request_correction` | Records a `CorrectionRequest` against a failed verification. The intent is unchanged.                                        |
+| Tool                      | Effect                                                                                                                                                                                                                                  |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inspect_component`       | A component's kind, ports, cited sources, and direct connections.                                                                                                                                                                       |
+| `follow_connections`      | Connections and components up to 3 hops in, out, or both.                                                                                                                                                                               |
+| `read_source`             | The cited source excerpt at the draft commit. It is recorded as evidence and returns an `evidenceId`.                                                                                                                                   |
+| `propose_graph_edit`      | Validates a `CatalogPatch` with `applyCatalogPatch`. It records a pending proposal with a preview, or returns the rejection.                                                                                                            |
+| `read_verification`       | The latest `VerificationReport` for an approved intent in the thread.                                                                                                                                                                   |
+| `request_correction`      | Records a `CorrectionRequest` against a failed verification. The intent is unchanged.                                                                                                                                                   |
+| `read_box_file`           | Reads one file a whiteboard box cites, at the draft commit. Recorded as evidence like `read_source`.                                                                                                                                    |
+| `propose_whiteboard_edit` | Validates a `WhiteboardEdit` (add, update or remove boxes; add or remove arrows) against the whiteboard sent with the turn and records it on the turn. The canvas previews it with Accept / Reject; it never touches the catalog draft. |
+
+A turn may carry `whiteboard` (`WhiteboardSnapshot` in [src/shared/design.ts](../src/shared/design.ts)): the boxes, arrows and notes on the developer's canvas. The main process sanitizes it ([whiteboard.ts](../src/main/design/whiteboard.ts)) and shows it to the model, so a pasted change request like `On "Supabase Postgres" (files …): use Firebase` is answered with a whiteboard edit instead of a request for a catalog selection. Accepting an edit on the canvas ("Accept & build") adds it to the change request and calls `window.api.backend.workflow.buildWhiteboard(projectId, turnId)`, which freezes it with the touched boxes' source and starts a coding run; see [Workflow](workflow.md#local-obligations-whiteboard-verifier-diogenes-whiteboard-v1).
 
 The harness, not the model, sets the patch's repository, commit and base revision. Each turn is capped at 8 model steps and 16 tool calls. Earlier turns replay as plain text, so a thread can switch models. Within a turn, model parts, including thought signatures, are returned verbatim. `pnpm vitest run test/design` exercises the loop with a scripted model and the real graph editor.
 

@@ -80,6 +80,7 @@ const backend: BackendApi = {
     preview: (request) => invoke(b.workflowPreview, request),
     getProject: (projectId) => invoke(b.workflowGetProject, projectId),
     startHandoff: (projectId, approvalId) => invoke(b.workflowStartHandoff, projectId, approvalId),
+    buildWhiteboard: (projectId, turnId) => invoke(b.workflowBuildWhiteboard, projectId, turnId),
     getHandoff: (projectId, handoffId) => invoke(b.workflowGetHandoff, projectId, handoffId),
     refresh: (projectId, handoffId) => invoke(b.workflowRefresh, projectId, handoffId),
     steer: (projectId, handoffId, message) =>

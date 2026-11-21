@@ -12,6 +12,7 @@
  * - `candidateId` is the git commit SHA the workflow materialized from a run's output.
  */
 import type { CatalogEdgeKind, CatalogGraph, CatalogPatch, CatalogPatchResult } from './catalog'
+import type { WhiteboardEdit, WhiteboardSnapshot } from './design'
 
 export interface WorkflowCorrelation {
   projectId: string
@@ -43,7 +44,7 @@ export interface SourceContext {
  * - `CatalogApprovedChange` (`kind: 'catalog'`): any other valid catalog patch, verified by
  *   type checking the candidate and re-indexing it against the approved connections.
  */
-export type ApprovedChange = RetryApprovedChange | CatalogApprovedChange
+export type ApprovedChange = RetryApprovedChange | CatalogApprovedChange | WhiteboardApprovedChange
 
 interface ApprovedChangeBase {
   version: 1
@@ -103,9 +104,39 @@ export interface CatalogApprovedChange extends ApprovedChangeBase {
   toolchain: { verifier: string; typescript: string }
 }
 
+/**
+ * A whiteboard change the developer accepted on the canvas (`kind: 'whiteboard'`): boxes and
+ * arrows to add, change or remove, with the developer's notes and the source of the boxes it
+ * touches. There is no catalog patch, so it is verified by type checking the candidate only.
+ */
+export interface WhiteboardApprovedChange {
+  version: 1
+  kind: 'whiteboard'
+  repository: { id: number; fullName: string }
+  /** Full SHA of the indexed commit the whiteboard was read from. */
+  baseCommit: string
+  /** The box the change is mainly about, for briefs and verdict targets. */
+  targetComponentId: string
+  /** The edit the developer accepted, exactly as the design agent proposed it. */
+  edit: WhiteboardEdit
+  /** The whiteboard it was proposed against, notes included. */
+  whiteboard: WhiteboardSnapshot
+  /** Repository paths (directories or files) the candidate may change. */
+  scope: string[]
+  obligations: { id: ObligationId; scope: string }[]
+  requiredChanges: string[]
+  preserved: string[]
+  openChoices: string[]
+  toolchain: { verifier: string; typescript: string }
+  correlation?: WorkflowCorrelation
+  sourceContext?: SourceContext[]
+}
+
 /** Paths the candidate of `packet` may change. */
 export function editableScope(packet: ApprovedChange): string[] {
-  return packet.kind === 'catalog' ? packet.scope : [packet.bindings.root]
+  return packet.kind === 'catalog' || packet.kind === 'whiteboard'
+    ? packet.scope
+    : [packet.bindings.root]
 }
 
 export interface ApprovalRecord {
@@ -122,6 +153,17 @@ export interface ApprovalRequest {
   /** Observed catalog at the base commit. Its `commit.sha` is the frozen base. */
   baseline: CatalogGraph
   patch: CatalogPatch
+  approvedBy: string
+}
+
+/** What the backend hands over when the developer accepts a whiteboard edit from the design chat. */
+export interface WhiteboardApprovalRequest {
+  correlation: WorkflowCorrelation
+  repository: { id: number; fullName: string }
+  /** The indexed commit the whiteboard was read from. */
+  baseCommit: string
+  edit: WhiteboardEdit
+  whiteboard: WhiteboardSnapshot
   approvedBy: string
 }
 
@@ -366,6 +408,7 @@ export interface PresentationContext {
 export interface WorkflowApi {
   preview(request: Pick<ApprovalRequest, 'baseline' | 'patch'>): Promise<CatalogPatchResult>
   approve(request: ApprovalRequest): Promise<ApprovalRecord>
+  approveWhiteboard(request: WhiteboardApprovalRequest): Promise<ApprovalRecord>
   startHandoff(approvalId: string, context?: PresentationContext): Promise<HandoffRecord>
   refresh(handoffId: string): Promise<HandoffRecord>
   steer(handoffId: string, message: string): Promise<HandoffRecord>

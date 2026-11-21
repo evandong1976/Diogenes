@@ -75,6 +75,15 @@ export interface BackendApi {
     getProject(projectId: string): Promise<ProjectWorkflowState>
     /** Idempotent: returns the open handoff of this approval instead of starting another run. */
     startHandoff(projectId: string, approvalId: string): Promise<HandoffRecord>
+    /**
+     * Builds an accepted whiteboard edit in the codebase: freezes the edit the design agent
+     * proposed in `turnId`, with the source of the boxes it touches, and starts a coding run.
+     * Idempotent like `startHandoff`.
+     */
+    buildWhiteboard(
+      projectId: string,
+      turnId: string
+    ): Promise<{ approval: ApprovalRecord; handoff: HandoffRecord }>
     getHandoff(projectId: string, handoffId: string): Promise<HandoffRecord | null>
     refresh(projectId: string, handoffId: string): Promise<HandoffRecord>
     /**
@@ -122,6 +131,7 @@ export const backendChannels = {
   workflowPreview: 'backend:workflow:preview',
   workflowGetProject: 'backend:workflow:getProject',
   workflowStartHandoff: 'backend:workflow:startHandoff',
+  workflowBuildWhiteboard: 'backend:workflow:buildWhiteboard',
   workflowGetHandoff: 'backend:workflow:getHandoff',
   workflowRefresh: 'backend:workflow:refresh',
   workflowSteer: 'backend:workflow:steer',

@@ -5,6 +5,7 @@
 import type {
   DesignTurnInput,
   DraftState,
+  WhiteboardSnapshot,
   EvidenceRecord,
   Proposal,
   ProjectState,
@@ -113,6 +114,8 @@ export function turnInput(args: {
   draft: DraftState
   message: string
   selection: SelectionCheck
+  /** The whiteboard on screen, so the agent can propose changes to it. */
+  whiteboard?: WhiteboardSnapshot | null
 }): DesignTurnInput {
   const { draft, selection } = args
   return {
@@ -125,7 +128,8 @@ export function turnInput(args: {
       revision: draft.revision
     },
     message: args.message.trim(),
-    ...(selection.status === 'ok' && { selectedComponentId: selection.componentId })
+    ...(selection.status === 'ok' && { selectedComponentId: selection.componentId }),
+    ...(args.whiteboard && { whiteboard: args.whiteboard })
   }
 }
 

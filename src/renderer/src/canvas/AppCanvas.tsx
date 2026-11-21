@@ -13,27 +13,39 @@ import {
   type NodeProps,
   type ReactFlowInstance
 } from '@xyflow/react'
+import type { CatalogGraph } from '../../../shared/catalog'
+import type { WhiteboardEdit } from '../../../shared/design'
 import { flowKinds, type AppFlow, type FlowKind } from '../../../shared/gemini'
 import { brandFor } from './brands'
 import {
   KIND_LABEL,
+  allBoxes,
+  applyWhiteboardEdit,
+  boxComponent,
   changeBrief,
   flowLayout,
   newBox,
   newLink,
   newNote,
   type Box,
+  type BoxComponent,
   type FlowDraft,
   type Link,
   type Note
 } from './flow'
 import type { Point } from './layout'
 import { PaneToggle } from './PaneToggle'
+import { buildStatus, type WhiteboardBuild } from './build'
 import { useWorkspace } from './components'
 
 // React Flow node data must be a plain object type; interfaces don't qualify.
 type Plain<T> = { [K in keyof T]: T[K] }
-type BoxNode = Node<Plain<Box> & { dim: boolean }, 'box'>
+/** How a box or arrow differs from the engineer's draft while a chat proposal is previewed. */
+type Mark = 'added' | 'removed' | 'changed' | undefined
+type BoxNode = Node<Plain<Box> & { dim: boolean; mark: Mark }, 'box'>
+
+/** A whiteboard edit the design chat proposed, from turn `turnId`. */
+export type ChatProposal = { turnId: string; edit: WhiteboardEdit }
 type NoteNode = Node<Plain<Note>, 'note'>
 type AnyNode = BoxNode | NoteNode
 
@@ -77,9 +89,17 @@ function BoxView({ data, selected }: NodeProps<BoxNode>): React.JSX.Element {
   const common = {
     'data-selected': selected || undefined,
     'data-proposed': data.proposed || undefined,
-    'data-dim': data.dim || undefined
+    'data-dim': data.dim || undefined,
+    'data-mark': data.mark
   }
-  const tag = data.proposed && <span className="flow-tag">Proposed</span>
+  const tag =
+    data.mark === 'removed' ? (
+      <span className="flow-tag flow-tag--removed">Remove</span>
+    ) : data.mark ? (
+      <span className="flow-tag flow-tag--chat">Chat</span>
+    ) : (
+      data.proposed && <span className="flow-tag">Proposed</span>
+    )
 
   if (data.kind === 'screen')
     return (
@@ -186,6 +206,14 @@ interface Props {
   onOpenLogic(box: Box): void
   /** Toolbar content on the left: where the map came from, re-read button. */
   status: React.ReactNode
+  /** The indexed catalog, to tell the design chat which component a box is. Null without one. */
+  catalog: CatalogGraph | null
+  /** A chat proposal to preview on the canvas, with Accept and Reject. */
+  proposal?: ChatProposal | null
+  onDecide?(turnId: string, accept: boolean): void
+  /** The coding run building the last accepted edit in the codebase. */
+  build?: WhiteboardBuild | null
+  onDismissBuild?(): void
 }
 
 export function AppCanvas({
@@ -195,16 +223,35 @@ export function AppCanvas({
   viewKey,
   focusFile,
   onOpenLogic,
-  status
+  status,
+  catalog,
+  proposal = null,
+  onDecide,
+  build = null,
+  onDismissBuild
 }: Props): React.JSX.Element {
-  const { panes } = useWorkspace()
+  const { panes, onSelectComponent } = useWorkspace()
   const [rf, setRf] = useState<ReactFlowInstance<AnyNode> | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [moving, setMoving] = useState<Record<string, Point>>({})
   // Controlled nodes must be handed back the size React Flow measured, or they stay hidden.
   const [sizes, setSizes] = useState<Record<string, { width: number; height: number }>>({})
 
-  const boxes = useMemo((): Box[] => [...flow.boxes, ...draft.boxes], [flow, draft.boxes])
+  // With a chat proposal open, the canvas shows the draft as it would be after accepting it.
+  const shown = useMemo(
+    () => (proposal ? applyWhiteboardEdit(flow, draft, proposal.edit) : draft),
+    [flow, draft, proposal]
+  )
+  const removedSet = useMemo(() => new Set(shown.removed ?? []), [shown.removed])
+  const markOf = (id: string): Mark => {
+    if (removedSet.has(id)) return 'removed'
+    if (!proposal) return undefined
+    if (!draft.boxes.some((b) => b.id === id) && shown.boxes.some((b) => b.id === id))
+      return 'added'
+    if (shown.changed?.[id] !== draft.changed?.[id]) return 'changed'
+    return undefined
+  }
+  const boxes = useMemo((): Box[] => allBoxes(flow, shown), [flow, shown])
   const layout = useMemo(() => flowLayout(boxes), [boxes])
   const byId = useMemo(() => new Map(boxes.map((b) => [b.id, b])), [boxes])
 
@@ -219,7 +266,7 @@ export function AppCanvas({
       selected: selectedId === b.id,
       deletable: !!b.proposed,
       measured: sizes[b.id],
-      data: { ...b, dim: !!focusFile && !b.paths.includes(focusFile) }
+      data: { ...b, dim: !!focusFile && !b.paths.includes(focusFile), mark: markOf(b.id) }
     })),
     ...draft.notes.map((n, i): NoteNode => {
       const target = n.target ? layout.get(n.target) : undefined
@@ -238,8 +285,14 @@ export function AppCanvas({
   ]
 
   const edges: Edge[] = [
-    ...([...flow.links, ...draft.links] as Link[]).map((l): Edge => {
-      const color = l.proposed ? 'var(--dg-accent)' : 'var(--dg-text-3)'
+    ...([...flow.links, ...shown.links] as Link[]).map((l): Edge => {
+      const gone = removedSet.has(l.id)
+      const fromChat = !!proposal && !draft.links.some((d) => d.id === l.id) && !!l.proposed
+      const color = gone
+        ? 'var(--dg-danger)'
+        : fromChat || l.proposed
+          ? 'var(--dg-accent)'
+          : 'var(--dg-text-3)'
       return {
         id: l.id,
         source: l.from,
@@ -250,7 +303,8 @@ export function AppCanvas({
         style: {
           stroke: color,
           strokeWidth: 1.5,
-          strokeDasharray: l.proposed ? '6 4' : undefined
+          strokeDasharray: gone ? '2 4' : l.proposed ? '6 4' : undefined,
+          opacity: gone ? 0.7 : undefined
         },
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
         labelStyle: { fill: 'var(--dg-text-2)', font: '500 11px var(--dg-font-ui)' },
@@ -372,7 +426,22 @@ export function AppCanvas({
     setDraft((d) => ({ ...d, boxes: d.boxes.map((b) => (b.id === id ? { ...b, ...patch } : b)) }))
 
   const selectedBox = selectedId ? byId.get(selectedId) : undefined
-  const brief = changeBrief(flow, draft)
+  // A selected note stands for the box it's pinned to: that's what its instruction is about.
+  const selectedNote = draft.notes.find((n) => n.id === selectedId)
+  const focusBox = selectedBox ?? (selectedNote?.target ? byId.get(selectedNote.target) : undefined)
+  const component = focusBox && !focusBox.proposed ? boxComponent(focusBox, catalog) : null
+  const brief = changeBrief(flow, draft, catalog)
+
+  // Tell the design chat which catalog component is selected, so a message can be about it.
+  const componentKey = component && focusBox ? `${component.componentId}\0${focusBox.name}` : ''
+  useEffect(() => {
+    onSelectComponent(
+      component && focusBox ? { componentId: component.componentId, label: focusBox.name } : null
+    )
+    // Keyed on the selection's identity, not the objects, so redraws don't re-report it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [componentKey])
+  useEffect(() => () => onSelectComponent(null), [onSelectComponent])
 
   return (
     <div className="canvas-layout">
@@ -417,6 +486,27 @@ export function AppCanvas({
           <span className="toolbar-divider" />
           <PaneToggle side="inspector" />
         </div>
+        {proposal && (
+          <div className="flow-proposal" role="region" aria-label="Proposed by the design chat">
+            <span className="dg-label">Proposed by chat</span>
+            <p className="flow-proposal__text">{proposal.edit.summary}</p>
+            <div className="flow-proposal__actions">
+              <button
+                className="dg-btn dg-btn--ghost"
+                onClick={() => onDecide?.(proposal.turnId, false)}
+              >
+                Reject
+              </button>
+              <button
+                className="dg-btn dg-btn--primary"
+                onClick={() => onDecide?.(proposal.turnId, true)}
+              >
+                Accept &amp; build
+              </button>
+            </div>
+          </div>
+        )}
+        {!proposal && build && <BuildCard build={build} onDismiss={onDismissBuild} />}
       </div>
       <aside className="inspector" aria-label="Inspector" hidden={!panes.inspector}>
         <div className="inspector__head">
@@ -434,6 +524,15 @@ export function AppCanvas({
         {selectedBox ? (
           <BoxInspector
             box={selectedBox}
+            removed={removedSet.has(selectedBox.id)}
+            onKeep={() =>
+              setDraft((d) => ({
+                ...d,
+                removed: (d.removed ?? []).filter((id) => id !== selectedBox.id)
+              }))
+            }
+            component={component}
+            indexed={!!catalog}
             onEdit={(patch) => editBox(selectedBox.id, patch)}
             onNote={() => addNote(selectedBox.id)}
             onOpenLogic={() => onOpenLogic(selectedBox)}
@@ -465,14 +564,62 @@ export function AppCanvas({
   )
 }
 
+/** Where the accepted change stands in the codebase: sent, coding, checking, built. */
+function BuildCard({
+  build,
+  onDismiss
+}: {
+  build: WhiteboardBuild
+  onDismiss?(): void
+}): React.JSX.Element {
+  const status = buildStatus(build)
+  const files = build.handoff?.runs.at(-1)?.candidate?.files ?? []
+  return (
+    <div className="flow-proposal flow-build" data-tone={status.tone} role="status">
+      <div className="flow-build__head">
+        <span className="dg-label">Building in the codebase</span>
+        <button className="link-x" aria-label="Dismiss" onClick={onDismiss}>
+          ✕
+        </button>
+      </div>
+      <p className="flow-proposal__text">{status.text}</p>
+      {build.sent && (
+        <p className="dg-data">
+          Sent the change with {build.sent.files} source files · may edit{' '}
+          {build.sent.scope.join(', ')}
+        </p>
+      )}
+      {files.length > 0 && (
+        <ul className="flow-build__files dg-data">
+          {files.slice(0, 6).map((f) => (
+            <li key={f}>{f}</li>
+          ))}
+          {files.length > 6 && <li>+{files.length - 6} more</li>}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function BoxInspector({
   box,
+  removed,
+  onKeep,
+  component,
+  indexed,
   onEdit,
   onNote,
   onOpenLogic,
   onRemove
 }: {
   box: Box
+  /** Marked for removal in the change request. */
+  removed: boolean
+  onKeep(): void
+  /** The catalog component the design chat attaches for this box. */
+  component: BoxComponent | null
+  /** Whether the repo's catalog is loaded, to explain a missing component. */
+  indexed: boolean
   onEdit(patch: Partial<Box>): void
   onNote(): void
   onOpenLogic(): void
@@ -483,7 +630,13 @@ function BoxInspector({
       <div className="row">
         <span className="dg-label">{KIND_LABEL[box.kind]}</span>
         {box.proposed && <span className="dg-pill flow-tag">Proposed</span>}
+        {removed && <span className="dg-pill flow-tag flow-tag--removed">Remove</span>}
       </div>
+      {removed && (
+        <button className="dg-btn" onClick={onKeep}>
+          Keep this box
+        </button>
+      )}
       {box.proposed ? (
         <>
           <input
@@ -523,6 +676,15 @@ function BoxInspector({
           {box.summary && <p className="muted">{box.summary}</p>}
           {box.tables.length > 0 && <p className="dg-data">Tables: {box.tables.join(', ')}</p>}
         </>
+      )}
+      {!box.proposed && (
+        <p className="dg-data" title={component?.componentId}>
+          {component
+            ? `Chat: ${component.name} · ${component.componentId}`
+            : indexed
+              ? 'Chat: no indexed component matches these files'
+              : 'Chat: waiting for the index'}
+        </p>
       )}
       {box.paths.length > 0 && (
         <div className="dg-evidence-list">

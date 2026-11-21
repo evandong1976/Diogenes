@@ -85,6 +85,16 @@ The packet (`kind: 'catalog'`) lists the connections a candidate must add, remov
 
 An expectation the re-indexed base already satisfies is not evidence and is `unknown`. Declaring port contracts or data contract nodes is recorded as `annotations` and asks nothing of the code. Acceptance needs every obligation to pass.
 
+## Local obligations (whiteboard verifier, `diogenes-whiteboard-v1`)
+
+Accepting a whiteboard edit on the canvas calls `workflow.buildWhiteboard(projectId, turnId)`. The backend reads the edit and the whiteboard it was proposed against from the stored design turn (never from the renderer), fetches the turn's commit by SHA, and freezes a `kind: 'whiteboard'` packet ([whiteboardApproval.ts](../src/main/workflow/whiteboardApproval.ts)):
+
+- `requiredChanges`: the edit as plain instructions (add, change or remove boxes and arrows, naming each touched box's files) plus the developer's notes on the touched boxes.
+- `scope`: the folders of the touched boxes' files, plus `package.json` when present, so the agent can add a client library.
+- `sourceContext`: every file under the scope at the base commit (same size limits as catalog packets).
+
+It then starts the handoff, so the run receives the brief, the frozen files as its workspace, and the scope as `editable`. There is no catalog patch to re-index against, so the only obligation is `native-typecheck` (same check as the catalog verifier, including the scope check). Accepting the same turn again returns the same approval and open handoff.
+
 ## Reproducible check
 
 ```sh

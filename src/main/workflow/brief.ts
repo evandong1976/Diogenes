@@ -4,13 +4,19 @@ import type {
   ApprovedChange,
   CatalogApprovedChange,
   CorrectionRequest,
-  RetryApprovedChange
+  RetryApprovedChange,
+  WhiteboardApprovedChange
 } from '../../shared/workflow'
 
 const list = (items: string[]): string => items.map((i) => `- ${i}`).join('\n')
 
 export function codingBrief(packet: ApprovedChange, correction?: CorrectionRequest): string {
-  const sections = packet.kind === 'catalog' ? catalogSections(packet) : retrySections(packet)
+  const sections =
+    packet.kind === 'catalog'
+      ? catalogSections(packet)
+      : packet.kind === 'whiteboard'
+        ? whiteboardSections(packet)
+        : retrySections(packet)
   if (correction) sections.push(correctionSection(correction))
   return sections.join('\n\n')
 }
@@ -43,6 +49,28 @@ function catalogSections(packet: CatalogApprovedChange): string[] {
     )}`,
     `## Connections\n${list(packet.connections.map((c) => `${c.expect === 'present' ? 'must exist' : 'must not exist'}: ${c.kind} ${c.from} -> ${c.to}`))}`,
     `## Approved catalog patch\n\`\`\`json\n${JSON.stringify(packet.patch.operations, null, 2)}\n\`\`\``
+  ]
+}
+
+function whiteboardSections(packet: WhiteboardApprovedChange): string[] {
+  const { edit, whiteboard } = packet
+  const boxes = whiteboard.boxes.map(
+    (b) =>
+      `${b.id}: ${b.kind} "${b.name}"${b.summary ? ` — ${b.summary}` : ''}${b.paths.length ? ` (code: ${b.paths.join(', ')})` : ''}`
+  )
+  return [
+    `# Implement the whiteboard change the developer accepted`,
+    `Repository ${packet.repository.fullName} at base commit ${packet.baseCommit}. Edit only: ${packet.scope.map((p) => `\`${p}\``).join(', ')}. The current source of that scope is in your workspace.`,
+    `## Required changes\n${list(packet.requiredChanges)}`,
+    `## Must stay the same\n${list(packet.preserved)}`,
+    `## Your choice\n${list(packet.openChoices)}`,
+    `## Checked locally after you finish\nYour run completing does not accept the change. These checks do, on the exact files you export.\n${list(
+      packet.obligations.map((o) => `\`${o.id}\`: ${o.scope}`)
+    )}`,
+    `## The whiteboard before the change\n${list(boxes)}\n\nArrows:\n${list(
+      whiteboard.links.map((l) => `${l.from} -> ${l.to}${l.label ? ` (${l.label})` : ''}`)
+    )}`,
+    `## Accepted whiteboard edit\n\`\`\`json\n${JSON.stringify(edit, null, 2)}\n\`\`\``
   ]
 }
 

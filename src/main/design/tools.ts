@@ -9,9 +9,13 @@ import type {
   ApprovedIntent,
   EvidenceRecord,
   ProposalPreview,
-  VerificationReport
+  VerificationReport,
+  WhiteboardEdit,
+  WhiteboardSnapshot
 } from '../../shared/design'
+import { flowKinds } from '../../shared/gemini'
 import { applyCatalogPatch } from '../catalog/editing'
+import { WhiteboardError, validateWhiteboardEdit } from './whiteboard'
 import type { FunctionDeclaration } from './model'
 
 /** Reads a repo file at an exact commit. Null when the file is not in that commit. */
@@ -36,6 +40,8 @@ export interface ToolContext {
   evidence: EvidenceRecord[]
   turnId: string
   signal: AbortSignal
+  /** The whiteboard the developer is looking at, when the client sent one. */
+  whiteboard?: WhiteboardSnapshot
 }
 
 export type ToolOutcome =
@@ -53,6 +59,7 @@ export type ToolOutcome =
       summary: string
       correction: { intentId: string; runId: string; failedChecks: string[]; instructions: string }
     }
+  | { ok: true; response: Record<string, unknown>; summary: string; whiteboard: WhiteboardEdit }
 
 const MAX_OPERATIONS = 20
 const MAX_EXCERPT_LINES = 80
@@ -206,6 +213,72 @@ export const toolDeclarations: FunctionDeclaration[] = [
     }
   },
   {
+    name: 'read_box_file',
+    description:
+      'Read one file a whiteboard box cites, at the draft commit, to ground a whiteboard edit in the code.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        boxId: str('Whiteboard box ID.'),
+        path: str('One of the files the box lists. Defaults to its first.')
+      },
+      required: ['boxId']
+    }
+  },
+  {
+    name: 'propose_whiteboard_edit',
+    description:
+      'Propose a change to the whiteboard the developer sees: add, rename or remove boxes and arrows. It appears on their canvas to accept or reject; nothing changes until they accept. Use it for requests about whiteboard boxes and notes. On a validation error, fix the edit and call again.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        summary: str('One or two sentences the developer will accept.'),
+        addBoxes: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: str('New short kebab-case ID.'),
+              kind: { type: 'string', enum: [...flowKinds] },
+              name: str('What an engineer would write on a whiteboard, e.g. "Firebase Firestore".'),
+              summary: str('One plain sentence: what it does.'),
+              tables: { type: 'array', items: { type: 'string' }, description: 'For data boxes.' }
+            },
+            required: ['id', 'kind', 'name']
+          }
+        },
+        updateBoxes: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: str('Existing box ID.'),
+              name: { type: 'string' },
+              summary: { type: 'string' },
+              tables: { type: 'array', items: { type: 'string' } }
+            },
+            required: ['id']
+          }
+        },
+        removeBoxIds: { type: 'array', items: { type: 'string' } },
+        addLinks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              from: str('Box ID, existing or added in this edit.'),
+              to: str('Box ID, existing or added in this edit.'),
+              label: str('A few words, e.g. "reads users".')
+            },
+            required: ['from', 'to']
+          }
+        },
+        removeLinkIds: { type: 'array', items: { type: 'string' } }
+      },
+      required: ['summary']
+    }
+  },
+  {
     name: 'read_verification',
     description:
       'Read the latest local verification of the coding run for an approved intent in this thread: which checks passed or failed and the candidate diff.',
@@ -244,6 +317,10 @@ export async function runTool(
         return await readSource(ctx, args)
       case 'propose_graph_edit':
         return propose(ctx, args)
+      case 'read_box_file':
+        return await readBoxFile(ctx, args)
+      case 'propose_whiteboard_edit':
+        return proposeWhiteboard(ctx, args)
       case 'read_verification':
         return await readVerification(ctx, args)
       case 'request_correction':
@@ -252,9 +329,57 @@ export async function runTool(
         return failure(`Unknown tool ${name}.`)
     }
   } catch (error) {
-    if (error instanceof ArgumentError) return failure(error.message)
+    if (error instanceof ArgumentError || error instanceof WhiteboardError)
+      return failure(error.message)
     throw error
   }
+}
+
+function proposeWhiteboard(ctx: ToolContext, args: Record<string, unknown>): ToolOutcome {
+  if (!ctx.whiteboard) return failure('The developer has no whiteboard open.')
+  const edit = validateWhiteboardEdit(args, ctx.whiteboard)
+  const counts = [
+    edit.addBoxes.length && `+${edit.addBoxes.length} boxes`,
+    edit.removeBoxIds.length && `-${edit.removeBoxIds.length} boxes`,
+    edit.updateBoxes.length && `~${edit.updateBoxes.length} boxes`,
+    edit.addLinks.length && `+${edit.addLinks.length} arrows`,
+    edit.removeLinkIds.length && `-${edit.removeLinkIds.length} arrows`
+  ].filter(Boolean)
+  return {
+    ok: true,
+    summary: `Proposed a whiteboard edit (${counts.join(', ')})`,
+    response: { shown: 'The edit is on the developer\'s canvas to accept or reject.' },
+    whiteboard: edit
+  }
+}
+
+async function readBoxFile(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolOutcome> {
+  const boxId = text(args.boxId, 'boxId')
+  const box = ctx.whiteboard?.boxes.find((b) => b.id === boxId)
+  if (!box) throw new ArgumentError(`No box ${boxId} on the whiteboard.`)
+  const path = args.path === undefined ? box.paths[0] : text(args.path, 'path')
+  if (!path || !box.paths.includes(path))
+    throw new ArgumentError(`${boxId} cites ${box.paths.length ? box.paths.join(', ') : 'no files'}.`)
+  const reused = ctx.evidence.find((e) => e.entityId === boxId && e.path === path)
+  if (reused) return evidenceOutcome(reused)
+  const file = await ctx.readSource(ctx.graph.repository, ctx.graph.commit.sha, path)
+  if (file === null) return failure(`${path} is not readable at ${ctx.graph.commit.sha.slice(0, 7)}.`)
+  const lines = file.split(/\r?\n/)
+  const endLine = Math.min(lines.length, MAX_EXCERPT_LINES * 2)
+  const record: EvidenceRecord = {
+    id: `${ctx.turnId}-ev${ctx.evidence.length + 1}`,
+    entityId: boxId,
+    commitSha: ctx.graph.commit.sha,
+    path,
+    startLine: 0,
+    endLine,
+    excerpt: lines
+      .slice(0, endLine)
+      .map((line, i) => `${i + 1}: ${line}`)
+      .join('\n')
+  }
+  ctx.evidence.push(record)
+  return evidenceOutcome(record)
 }
 
 class ArgumentError extends Error {}

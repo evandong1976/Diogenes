@@ -9,7 +9,14 @@ import type { IndexStatus, SoftwareGraph } from '../../shared/indexing'
 import { CodeLogicLevel } from './canvas/CodeLogicLevel'
 import { initialLogic, type LogicState } from './canvas/logic'
 import { AppLevel } from './canvas/AppLevel'
-import { EXAMPLE_DRAFT, emptyFlowDraft, type FlowDraft } from './canvas/flow'
+import {
+  EXAMPLE_DRAFT,
+  applyWhiteboardEdit,
+  emptyFlowDraft,
+  whiteboardOf,
+  type FlowDraft
+} from './canvas/flow'
+import { startBuild, type WhiteboardBuild } from './canvas/build'
 import { indexLabel } from './canvas/indexStatus'
 import { RepositoryCatalog } from './RepositoryCatalog'
 import { Sidebar } from './Sidebar'
@@ -40,6 +47,12 @@ function App(): React.JSX.Element {
   // The app map Gemini read from the repo, and what the engineer proposed on top of it.
   const [flow, setFlow] = useState<AppFlow | null>(null)
   const [flowDraft, setFlowDraft] = useState<FlowDraft>(EXAMPLE_DRAFT)
+  // Whiteboard edits the chat proposed that the engineer accepted or rejected (by turn ID), and
+  // when this repo was opened: proposals from earlier sessions aren't offered again.
+  const [decided, setDecided] = useState<ReadonlySet<string>>(new Set())
+  // The coding run building the last accepted whiteboard edit in the codebase.
+  const [build, setBuild] = useState<WhiteboardBuild | null>(null)
+  const [openedAt, setOpenedAt] = useState(() => new Date().toISOString())
 
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null)
   // Canvas draws the diagrams; Catalog is the searchable list where catalog entries are edited.
@@ -78,6 +91,9 @@ function App(): React.JSX.Element {
     setLogicOpen(false)
     setFlow(null)
     setFlowDraft(emptyFlowDraft)
+    setDecided(new Set())
+    setBuild(null)
+    setOpenedAt(new Date().toISOString())
     setIndexStatus(null)
     setIndexed(null)
     setDrafts({})
@@ -171,6 +187,15 @@ function App(): React.JSX.Element {
   // Example mode has no repo: only the Code logic level, on the bundled fixture.
   const shownRepo = exampleOpen ? null : repo
   const catalog = shownRepo ? (indexed?.catalog ?? null) : null
+  // The whiteboard as the chat agent sees it, and the newest edit it proposed that's still open.
+  const whiteboard = shownRepo && flow ? whiteboardOf(flow, flowDraft) : null
+  const proposedTurn = shownRepo
+    ? [...(chat.project?.turns ?? [])]
+        .filter((t) => t.whiteboardEdit && !decided.has(t.id) && t.startedAt >= openedAt)
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]
+    : undefined
+  const chatProposal =
+    proposedTurn && flow ? { turnId: proposedTurn.id, edit: proposedTurn.whiteboardEdit! } : null
   // Example mode has no backend project, so its left pane is Project only.
   const tab = shownRepo ? leftTab : 'project'
 
@@ -276,6 +301,7 @@ function App(): React.JSX.Element {
               selected={selected}
               hidden={!leftOpen || tab !== 'chat'}
               onOpenSource={setFocusFile}
+              whiteboard={whiteboard}
             />
           )}
         </div>
@@ -308,6 +334,17 @@ function App(): React.JSX.Element {
                 indexStatus={indexStatus}
                 focusFile={focusFile}
                 onOpenLogic={() => setLogicOpen(true)}
+                catalog={catalog}
+                proposal={chatProposal}
+                onDecide={(turnId, accept) => {
+                  if (accept && flow && chatProposal?.turnId === turnId) {
+                    setFlowDraft((d) => applyWhiteboardEdit(flow, d, chatProposal.edit))
+                    if (shownRepo) void startBuild(String(shownRepo.id), turnId, setBuild)
+                  }
+                  setDecided((s) => new Set(s).add(turnId))
+                }}
+                build={build}
+                onDismissBuild={() => setBuild(null)}
               />
             )}
           </main>

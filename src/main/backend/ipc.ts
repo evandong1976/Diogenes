@@ -10,7 +10,7 @@ import { DESIGN_MODELS, githubSourceReader } from '../design'
 import { geminiModelClient } from '../design/model'
 import { getAuthorizedRepo, githubFetch, githubGitAuthHeader, onSessionChange } from '../github'
 import { readIndexedGraph } from '../indexing/ipc'
-import { catalogVerifier, refundRetryVerifier } from '../workflow/verifiers'
+import { catalogVerifier, refundRetryVerifier, whiteboardVerifier } from '../workflow/verifiers'
 import { GitMirror } from './repos'
 import {
   createBackend,
@@ -111,7 +111,7 @@ async function openBackend(): Promise<AgentBackend> {
       remoteUrl: (fullName) => `https://github.com/${fullName}.git`,
       authHeader: githubGitAuthHeader
     }),
-    verifiers: [refundRetryVerifier(), catalogVerifier()],
+    verifiers: [refundRetryVerifier(), catalogVerifier(), whiteboardVerifier()],
     // Additive, versioned and advisory-locked, so every app start may apply pending migrations.
     migrate: true
   })
@@ -151,6 +151,8 @@ function registerHandlers(call: Call): void {
     [c.workflowGetProject]: (backend: AgentBackend, p: string) => backend.workflow.getProject(p),
     [c.workflowStartHandoff]: (backend: AgentBackend, p: string, a: string) =>
       backend.workflow.startHandoff(p, a),
+    [c.workflowBuildWhiteboard]: (backend: AgentBackend, p: string, t: string) =>
+      backend.workflow.buildWhiteboard(p, t),
     [c.workflowGetHandoff]: (backend: AgentBackend, p: string, h: string) =>
       backend.workflow.getHandoff(p, h),
     [c.workflowRefresh]: (backend: AgentBackend, p: string, h: string) =>

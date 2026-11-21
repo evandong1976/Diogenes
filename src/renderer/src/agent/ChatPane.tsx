@@ -7,7 +7,13 @@ import {
   useRef,
   useState
 } from 'react'
-import type { DraftState, EvidenceRecord, Proposal, TurnRecord } from '../../../shared/design'
+import type {
+  DraftState,
+  EvidenceRecord,
+  Proposal,
+  TurnRecord,
+  WhiteboardSnapshot
+} from '../../../shared/design'
 import type { ApprovalRecord } from '../../../shared/workflow'
 import {
   DESIGN_MODELS,
@@ -30,6 +36,8 @@ interface Props {
   hidden?: boolean
   /** Highlights a source file in the sidebar tree and on the canvas. */
   onOpenSource?(path: string): void
+  /** The whiteboard on screen, sent with each message so the agent can propose changes to it. */
+  whiteboard?: WhiteboardSnapshot | null
 }
 
 /** Source rows link to the file tree; provided once by the pane. */
@@ -41,7 +49,13 @@ const time = (iso: string): string =>
 const MODEL_OPTIONS = DESIGN_MODELS.map((m) => ({ value: m, label: m }))
 
 /** The project's design conversation: threads, transcript, context, composer and proposals. */
-export function ChatPane({ chat, selected, hidden, onOpenSource }: Props): React.JSX.Element {
+export function ChatPane({
+  chat,
+  selected,
+  hidden,
+  onOpenSource,
+  whiteboard
+}: Props): React.JSX.Element {
   const { load, draft, project, activeId, pending } = chat
   const [text, setText] = useState('')
   // The component the developer removed from the message; a new canvas selection is attached.
@@ -96,7 +110,7 @@ export function ChatPane({ chat, selected, hidden, onOpenSource }: Props): React
   const send = async (): Promise<void> => {
     if (!canSend) return
     pinned.current = true
-    const ok = await chat.send(text, model, sendSelection)
+    const ok = await chat.send(text, model, sendSelection, whiteboard)
     if (ok) setText('')
   }
 

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GithubRepo } from '../../../preload'
+import type { CatalogGraph } from '../../../shared/catalog'
 import type { AppFlow } from '../../../shared/gemini'
 import type { IndexStatus } from '../../../shared/indexing'
-import { AppCanvas } from './AppCanvas'
+import { AppCanvas, type ChatProposal } from './AppCanvas'
+import type { WhiteboardBuild } from './build'
 import { PaneToggle } from './PaneToggle'
 import { EXAMPLE_FLOW, type Box, type FlowDraft } from './flow'
 import { indexRunning } from './indexStatus'
@@ -17,6 +19,14 @@ interface Props {
   indexStatus: IndexStatus | null
   focusFile: string | null
   onOpenLogic(box: Box): void
+  /** The indexed catalog: boxes are matched to its components for the design chat. */
+  catalog: CatalogGraph | null
+  /** A whiteboard edit the design chat proposed, shown on the canvas until it's decided. */
+  proposal: ChatProposal | null
+  onDecide(turnId: string, accept: boolean): void
+  /** The coding run building the last accepted edit, shown on the canvas. */
+  build: WhiteboardBuild | null
+  onDismissBuild(): void
 }
 
 /** The one canvas: how the app runs, and what the engineer wants changed. */
@@ -28,7 +38,12 @@ export function AppLevel({
   setDraft,
   indexStatus,
   focusFile,
-  onOpenLogic
+  onOpenLogic,
+  catalog,
+  proposal,
+  onDecide,
+  build,
+  onDismissBuild
 }: Props): React.JSX.Element {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -96,6 +111,11 @@ export function AppLevel({
           focusFile={focusFile}
           onOpenLogic={onOpenLogic}
           status={status}
+          catalog={repo ? catalog : null}
+          proposal={repo ? proposal : null}
+          onDecide={onDecide}
+          build={repo ? build : null}
+          onDismissBuild={onDismissBuild}
         />
       ) : (
         <div className="dg-canvas--dots canvas-empty level-empty">

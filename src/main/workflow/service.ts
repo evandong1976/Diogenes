@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import { ApprovalError, freezeApproval, previewProposal } from './approval.ts'
 import { codingBrief, correctionBrief, steerBrief } from './brief.ts'
+import { freezeWhiteboard } from './whiteboardApproval.ts'
 import { CandidateRepo } from './candidates.ts'
 import { WorkflowStore, type WorkflowRepository } from './store.ts'
 import { mismatchesOf, toVerdict, unsupportedVerdict, type LocalVerifier } from './verifiers.ts'
@@ -27,6 +28,7 @@ import type {
   CodingRunSnapshot,
   ThreadMessage,
   Verdict,
+  WhiteboardApprovalRequest,
   WorkflowApi
 } from '../../shared/workflow'
 
@@ -63,10 +65,22 @@ export class WorkflowService implements WorkflowApi {
   }
 
   async approve(request: ApprovalRequest): Promise<ApprovalRecord> {
+    return this.record(request, (repo) => freezeApproval(repo, request))
+  }
+
+  /** Freezes an accepted whiteboard edit. Same identity rules as `approve`. */
+  async approveWhiteboard(request: WhiteboardApprovalRequest): Promise<ApprovalRecord> {
+    return this.record(request, (repo) => freezeWhiteboard(repo, request))
+  }
+
+  private async record(
+    request: Pick<ApprovalRequest, 'correlation' | 'approvedBy'>,
+    freeze: (repo: string) => ReturnType<typeof freezeApproval>
+  ): Promise<ApprovalRecord> {
     const repo = this.deps.repoFor(request.correlation.projectId)
     let frozen
     try {
-      frozen = freezeApproval(repo, request)
+      frozen = freeze(repo)
     } catch (error) {
       if (error instanceof ApprovalError) throw new WorkflowError(error.message)
       throw error
@@ -469,7 +483,7 @@ export class WorkflowService implements WorkflowApi {
   /** The approved state machine behavior of a refund-path approval; null for catalog changes. */
   private async behavior(h: HandoffRecord): Promise<RetryBehavior | null> {
     const { packet } = (await this.store.approval(h.approvalId))!
-    if (packet.kind === 'catalog') return null
+    if (packet.kind === 'catalog' || packet.kind === 'whiteboard') return null
     const op = packet.patch.operations[0]
     if (op.type !== 'update' || op.node.kind !== 'stateMachine' || !op.node.properties.behavior)
       throw new WorkflowError('Approval has no state machine behavior')

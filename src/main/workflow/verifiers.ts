@@ -11,6 +11,7 @@ import {
 } from '../verification/refundRetry.ts'
 import { verifyCatalogChange } from '../verification/catalogConformance.ts'
 import { CATALOG_VERIFIER_ID } from './catalogApproval.ts'
+import { WHITEBOARD_VERIFIER_ID } from './whiteboardApproval.ts'
 import { editableScope } from '../../shared/workflow'
 import type { RetryBehavior } from '../../shared/catalog'
 import type {
@@ -34,6 +35,11 @@ export interface LocalVerifier {
 
 export function refundRetryVerifier(bend: string = pinnedBend()): LocalVerifier {
   return { id: VERIFIER_ID, verify: (input) => verifyRefundRetry({ ...input, bend }) }
+}
+
+/** Scope and type check of the exact candidate, for an accepted whiteboard change. */
+export function whiteboardVerifier(): LocalVerifier {
+  return { id: WHITEBOARD_VERIFIER_ID, verify: (input) => verifyCatalogChange(input) }
 }
 
 /** Type check plus re-index of the exact candidate, for any non-refund catalog change. */

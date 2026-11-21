@@ -23,6 +23,7 @@ import { runIndexJob } from '../indexing/job.ts'
 import { loadTypescript } from '../indexing/scip.ts'
 import { git } from '../workflow/approval.ts'
 import { CATALOG_VERIFIER_ID } from '../workflow/catalogApproval.ts'
+import { WHITEBOARD_VERIFIER_ID } from '../workflow/whiteboardApproval.ts'
 import type { ObligationResult, VerificationReport } from './refundRetry.ts'
 import type { CatalogGraph } from '../../shared/catalog'
 import type { SoftwareGraph } from '../../shared/indexing'
@@ -55,8 +56,12 @@ export async function verifyCatalogChange(input: CatalogVerifyInput): Promise<Ve
   if (packetDigest !== input.trustedDigest)
     return invalid('The approval packet bytes do not match the approval ID.')
   const packet = JSON.parse(bytes.toString('utf8')) as ApprovedChange
-  if (packet.kind !== 'catalog' || packet.toolchain.verifier !== CATALOG_VERIFIER_ID)
-    return invalid(`Packet is not for ${CATALOG_VERIFIER_ID}.`)
+  // Whiteboard changes share the scope check and type check; they have no connections to re-index.
+  if (
+    !(packet.kind === 'catalog' && packet.toolchain.verifier === CATALOG_VERIFIER_ID) &&
+    !(packet.kind === 'whiteboard' && packet.toolchain.verifier === WHITEBOARD_VERIFIER_ID)
+  )
+    return invalid(`Packet is not for ${CATALOG_VERIFIER_ID} or ${WHITEBOARD_VERIFIER_ID}.`)
   const { baseCommit: base } = packet
   const candidate = input.candidate
   if (!/^[0-9a-f]{40}$/.test(candidate)) return invalid('Candidate is not a full commit SHA.')
@@ -88,7 +93,7 @@ export async function verifyCatalogChange(input: CatalogVerifyInput): Promise<Ve
     for (const o of packet.obligations) {
       if (o.id === 'native-typecheck')
         obligations.push({ ...ctx, ...typecheck(baseTree.root, candTree.root, changed) })
-      else if (o.id === 'catalog-conformance')
+      else if (o.id === 'catalog-conformance' && packet.kind === 'catalog')
         obligations.push({ ...ctx, ...conformance(packet, baseTree, candTree) })
       else
         obligations.push({
@@ -128,7 +133,7 @@ interface IndexedTree {
 /** Archives `sha` from git and runs the indexing job on it, exactly as for an observed commit. */
 async function indexTree(
   repoDir: string,
-  packet: CatalogApprovedChange,
+  packet: Pick<CatalogApprovedChange, 'repository'>,
   sha: string,
   dir: string
 ): Promise<IndexedTree> {

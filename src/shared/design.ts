@@ -7,6 +7,7 @@ import type {
   CatalogPatch,
   CatalogSource
 } from './catalog'
+import type { FlowBox, FlowKind, FlowLink } from './gemini'
 
 // Backend state for design turns: the working catalog draft, pending proposals, approved intents
 // handed to coding, and the turn records a client needs to reopen a project and see where work is.
@@ -29,6 +30,39 @@ export interface DesignTurnInput {
   message: string
   /** Presentation context, e.g. the canvas node the developer has selected. Catalog node ID. */
   selectedComponentId?: string
+  /** The whiteboard the developer sees, so the agent can propose changes to it. */
+  whiteboard?: WhiteboardSnapshot
+}
+
+// ---- Whiteboard ----
+// The canvas developers look at: boxes (screens, logic, services, data) and arrows that Gemini drew
+// from the repo, plus their own notes and proposed pieces. The agent proposes edits to it; the
+// developer accepts or rejects them on the canvas.
+
+/** A box as the agent sees it. `proposed` marks one the developer added and isn't built yet. */
+export type WhiteboardBox = FlowBox & { proposed?: boolean }
+
+export interface WhiteboardSnapshot {
+  boxes: WhiteboardBox[]
+  links: FlowLink[]
+  /** Developer instructions, pinned to a box (`target`) or loose. */
+  notes: { text: string; target?: string }[]
+}
+
+/** A change to the whiteboard the agent proposes. Nothing changes until the developer accepts. */
+export interface WhiteboardEdit {
+  /** One or two sentences the developer will accept. */
+  summary: string
+  addBoxes: { id: string; kind: FlowKind; name: string; summary: string; tables: string[] }[]
+  updateBoxes: {
+    id: string
+    name?: string
+    summary?: string
+    tables?: string[]
+  }[]
+  removeBoxIds: string[]
+  addLinks: { from: string; to: string; label: string }[]
+  removeLinkIds: string[]
 }
 
 export type SelectionResolution =
@@ -83,6 +117,10 @@ export interface TurnRecord {
   evidence: EvidenceRecord[]
   proposalId?: string
   correctionId?: string
+  /** A whiteboard change the agent proposed this turn. Accepted or rejected on the canvas. */
+  whiteboardEdit?: WhiteboardEdit
+  /** The whiteboard `whiteboardEdit` was proposed against; frozen with it when accepted. */
+  whiteboardBase?: WhiteboardSnapshot
   /** The agent's final message to the developer. */
   reply?: string
   error?: string
