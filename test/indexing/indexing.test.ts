@@ -123,7 +123,7 @@ describe('indexing a repo with no TypeScript or JavaScript', () => {
         prefix: 'octo-empty-ccccccc',
         portable: true
       },
-      ['README.md', 'package.json']
+      ['README.md', 'package.json', 'docker-compose.yml']
     )
     const res = await runIndexJob({
       archivePath: out,
@@ -135,6 +135,8 @@ describe('indexing a repo with no TypeScript or JavaScript', () => {
     const graph: SoftwareGraph = JSON.parse(await readFile(res.graphPath, 'utf8'))
     expect(graph.diagnostics.map((d) => d.code)).toContain('no-typescript-sources')
     expect(graph.catalog?.nodes.some((n) => n.kind === 'module')).toBe(true)
+    // Compose files are written into the snapshot so discovery can read them.
+    expect(graph.catalog?.nodes.find((n) => n.kind === 'resource')?.name).toBe('db')
   }, 60_000)
 })
 

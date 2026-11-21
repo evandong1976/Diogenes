@@ -76,6 +76,9 @@ export function classifyPath(path: string): PathClass {
   const ext = extname(path)
   const tsjs = TS_JS[ext]
   if (tsjs) return { extract: true, language: tsjs, source: true, reason: 'not-in-index' }
+  // Compose files: catalog discovery reads them for datastore and broker resources.
+  if (/(^|\/)(docker-)?compose(\.[\w-]+)?\.ya?ml$/.test(path))
+    return { extract: true, language: 'yaml', source: false, reason: 'non-source' }
   // Configs the analyzer reads: tsconfig/jsconfig, package.json, JSON modules.
   if (ext === '.json')
     return { extract: true, language: 'json', source: false, reason: 'non-source' }
