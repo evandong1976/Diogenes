@@ -10,7 +10,10 @@ import type {
   CatalogPatch,
   CatalogPatchResult,
   CatalogPort,
-  CatalogProtocol
+  CatalogProtocol,
+  RetryBehavior,
+  RetryEffect,
+  RetryEvent
 } from '../../shared/catalog'
 
 const KINDS: readonly CatalogKind[] = [
@@ -206,6 +209,8 @@ function checkNode(draft: CatalogGraph, node: CatalogNode): void {
   if (!KINDS.includes(node.kind)) fail('invalid-node', `Unknown node kind ${node.kind}`, node.id)
   if (!RESOLUTIONS.includes(node.resolution))
     fail('invalid-node', `Unknown resolution ${node.resolution}`, node.id)
+  if (node.kind === 'stateMachine' && node.properties.behavior !== undefined)
+    checkBehavior(node.id, node.properties.behavior)
   const seen = new Set<string>()
   for (const port of node.ports) {
     const at = `${node.id}.${port.id}`
@@ -234,6 +239,59 @@ function checkNode(draft: CatalogGraph, node: CatalogNode): void {
     }
   }
 }
+
+const STATE_ID = /^[A-Z][A-Za-z0-9]*$/
+const ATTEMPTS: readonly unknown[] = [1, 2, 3]
+
+function checkBehavior(nodeId: string, behavior: RetryBehavior): void {
+  const bad = (message: string): never => fail('invalid-node', `${nodeId}: ${message}`, nodeId)
+  if (behavior.version !== 1) bad(`unsupported behavior version ${behavior.version}`)
+  if (!Array.isArray(behavior.states) || !Array.isArray(behavior.transitions))
+    bad('behavior needs states and transitions')
+  const states = new Set<string>()
+  for (const state of behavior.states) {
+    if (typeof state !== 'string' || !STATE_ID.test(state)) bad(`invalid state id ${state}`)
+    if (states.has(state)) fail('duplicate', `${nodeId}: duplicate state ${state}`, nodeId)
+    states.add(state)
+  }
+  if (!states.has(behavior.initialState)) bad(`unknown initial state ${behavior.initialState}`)
+  const ids = new Set<string>()
+  const matches = new Set<string>()
+  for (const t of behavior.transitions) {
+    if (!t.id || typeof t.id !== 'string') bad('transition needs an id')
+    if (ids.has(t.id)) fail('duplicate', `${nodeId}: duplicate transition ${t.id}`, nodeId)
+    ids.add(t.id)
+    for (const end of [t.from, t.to])
+      if (!states.has(end)) bad(`transition ${t.id} uses unknown state ${end}`)
+    if (!validEvent(t.event)) bad(`transition ${t.id} has an invalid event`)
+    if (!validEffect(t.effect)) bad(`transition ${t.id} has an invalid effect`)
+    const match = `${t.from}/${retryEventKey(t.event)}`
+    if (matches.has(match))
+      fail('duplicate', `${nodeId}: transition ${t.id} repeats the match ${match}`, nodeId)
+    matches.add(match)
+  }
+}
+
+function validEvent(event: RetryEvent): boolean {
+  if (event?.type === 'Start') return Object.keys(event).length === 1
+  return (
+    (event?.type === 'Succeeded' || event?.type === 'Failed') &&
+    ATTEMPTS.includes(event.attempt) &&
+    Object.keys(event).length === 2
+  )
+}
+
+function validEffect(effect: RetryEffect): boolean {
+  if (effect?.type === 'NoEffect') return Object.keys(effect).length === 1
+  return (
+    effect?.type === 'RunAttempt' &&
+    ATTEMPTS.includes(effect.attempt) &&
+    Object.keys(effect).length === 2
+  )
+}
+
+export const retryEventKey = (event: RetryEvent): string =>
+  event.type === 'Start' ? 'Start' : `${event.type}(${event.attempt})`
 
 /**
  * After an update, edges that named a port on this node must still find it, and edges that
