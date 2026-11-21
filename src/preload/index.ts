@@ -5,6 +5,7 @@ import { indexingChannels, type IndexStatus, type IndexingApi } from '../shared/
 
 export type GithubUser = { login: string; name: string | null }
 export type DeviceCode = { userCode: string; verificationUri: string }
+export type NewRepo = { name: string; description: string; private: boolean }
 export type GithubRepo = {
   id: number
   fullName: string
@@ -21,6 +22,13 @@ const gemini: DiogenesApi['gemini'] = {
   buildArchitecture: (repo) => ipcRenderer.invoke(geminiChannels.buildArchitecture, repo),
   proposeEdit: (graph, png) => ipcRenderer.invoke(geminiChannels.proposeEdit, graph, png)
 }
+
+// Electron prefixes main-process errors with "Error invoking remote method '<channel>': Error: ".
+// Strip it so the UI can show GitHub's message as-is.
+const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> =>
+  ipcRenderer.invoke(channel, ...args).catch((e: Error) => {
+    throw new Error(e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))
+  })
 
 const canvas: DiogenesApi['canvas'] = {
   capture: (rect) => ipcRenderer.invoke(geminiChannels.capture, rect)
@@ -48,11 +56,12 @@ const api = {
   canvas,
   indexing,
   github: {
-    getUser: (): Promise<GithubUser | null> => ipcRenderer.invoke('github:getUser'),
-    startLogin: (): Promise<DeviceCode> => ipcRenderer.invoke('github:startLogin'),
-    finishLogin: (): Promise<GithubUser> => ipcRenderer.invoke('github:finishLogin'),
-    logout: (): Promise<void> => ipcRenderer.invoke('github:logout'),
-    listRepos: (): Promise<GithubRepo[]> => ipcRenderer.invoke('github:listRepos')
+    getUser: (): Promise<GithubUser | null> => invoke('github:getUser'),
+    startLogin: (): Promise<DeviceCode> => invoke('github:startLogin'),
+    finishLogin: (): Promise<GithubUser> => invoke('github:finishLogin'),
+    logout: (): Promise<void> => invoke('github:logout'),
+    listRepos: (): Promise<GithubRepo[]> => invoke('github:listRepos'),
+    createRepo: (repo: NewRepo): Promise<GithubRepo> => invoke('github:createRepo', repo)
   }
 }
 
