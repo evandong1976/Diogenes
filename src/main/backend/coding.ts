@@ -154,7 +154,10 @@ function snapshot(view: CodingRunView, approvalId: string): CodingRunSnapshot {
   const latest = view.turns.at(-1)
   const events: RunEvent[] = view.activity.map((a: CodingActivity) => ({
     at: view.updatedAt,
-    kind: a.kind === 'command' || a.kind === 'command_output' ? 'tool' : 'message',
+    kind:
+      a.kind === 'command' || a.kind === 'command_output' || a.kind === 'other'
+        ? 'tool'
+        : 'message',
     text: a.text,
     turn: a.turn,
     ...(a.kind === 'command' && { shell: 'command' as const }),

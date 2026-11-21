@@ -12,7 +12,8 @@ const defaultTurnTokenBudget = 180_000
 
 interface RawStep {
   type?: string
-  arguments?: { code?: string }
+  name?: string
+  arguments?: { code?: string; AbsolutePath?: string; SearchDirectory?: string }
   result?: unknown
   is_error?: boolean
   text?: string
@@ -27,6 +28,16 @@ interface RawInteraction {
 }
 
 function toStep(step: RawStep): ProviderStep {
+  if (step.type === 'function_call') {
+    const path = step.arguments?.AbsolutePath ?? step.arguments?.SearchDirectory
+    return { type: 'other', text: `${step.name ?? 'Tool'}${path ? ` · ${path}` : ''}` }
+  }
+  if (step.type === 'function_result') {
+    return {
+      type: 'other',
+      text: `${step.name ?? 'Tool'} ${step.is_error ? 'failed' : 'finished'}`
+    }
+  }
   if (step.type === 'code_execution_call') {
     return { type: 'command', text: step.arguments?.code ?? '' }
   }
@@ -88,6 +99,51 @@ export function createAntigravityProvider(options: {
     }
   }
 
+  // The background GET omits steps until completion. Replay the event stream briefly to expose
+  // completed tool calls while the run is active, including after an application restart.
+  async function liveSteps(id: string): Promise<ProviderStep[]> {
+    const steps: ProviderStep[] = []
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 1500)
+    try {
+      const response = await call(`${base}/interactions/${encodeURIComponent(id)}?stream=true`, {
+        headers,
+        signal: controller.signal
+      })
+      if (!response.ok || !response.body) return steps
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n')
+        let end: number
+        while ((end = buffer.indexOf('\n\n')) !== -1) {
+          const block = buffer.slice(0, end)
+          buffer = buffer.slice(end + 2)
+          const data = block
+            .split('\n')
+            .filter((line) => line.startsWith('data:'))
+            .map((line) => line.slice(5).trimStart())
+            .join('\n')
+          if (!data || data === '[DONE]') continue
+          const event = JSON.parse(data) as { event_type?: string; step?: RawStep }
+          if (event.event_type === 'step.start' && event.step && event.step.type !== 'thought') {
+            steps.push(toStep(event.step))
+            if (steps.length > 150) steps.shift()
+          }
+        }
+      }
+    } catch {
+      // Polling the interaction remains authoritative if the stream is unavailable.
+    } finally {
+      clearTimeout(timeout)
+      controller.abort()
+    }
+    return steps
+  }
+
   return {
     agent,
     async create(turn: CreateTurn) {
@@ -131,7 +187,11 @@ export function createAntigravityProvider(options: {
       const response = await request(`${base}/interactions/${encodeURIComponent(id)}`, {
         timeout: 20_000
       })
-      return interaction(await response.json())
+      const result = interaction(await response.json())
+      if (result.status === 'in_progress' || result.status === 'queued') {
+        result.steps = await liveSteps(id)
+      }
+      return result
     },
     async cancel(id) {
       const response = await request(`${base}/interactions/${encodeURIComponent(id)}/cancel`, {
