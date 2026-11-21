@@ -1,9 +1,7 @@
-import { ElectronAPI } from '@electron-toolkit/preload'
-import type { DiogenesApi } from '../shared/gemini'
+import type { Api } from './index'
 
 declare global {
   interface Window {
-    electron: ElectronAPI
-    api: DiogenesApi
+    api: Api
   }
 }

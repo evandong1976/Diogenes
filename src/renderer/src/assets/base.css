@@ -65,3 +65,94 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+  background: var(--color-background-mute);
+  border: 1px solid var(--ev-c-gray-3);
+  border-radius: 6px;
+  padding: 6px 12px;
+}
+button {
+  cursor: pointer;
+}
+button:hover {
+  background: var(--ev-c-gray-3);
+}
+button[aria-pressed='true'],
+button.primary {
+  background: var(--ev-c-text-1);
+  color: var(--ev-c-black);
+}
+button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  text-decoration: underline;
+}
+a {
+  color: inherit;
+}
+:focus-visible {
+  outline: 2px solid #6ea8fe;
+  outline-offset: 2px;
+}
+.muted {
+  color: var(--ev-c-text-2);
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+.screen.wide {
+  justify-content: flex-start;
+  align-items: stretch;
+  text-align: left;
+  max-width: 720px;
+  margin: 0 auto;
+}
+.code {
+  font:
+    600 2rem ui-monospace,
+    Menlo,
+    monospace;
+  letter-spacing: 0.15em;
+}
+.repos {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+.repos button {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+}
+.repos .muted {
+  flex-basis: 100%;
+  font-size: 0.9em;
+}
+.badge {
+  font-size: 0.75em;
+  border: 1px solid var(--ev-c-gray-1);
+  border-radius: 4px;
+  padding: 0 4px;
+}

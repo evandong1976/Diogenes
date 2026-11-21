@@ -1,28 +1,33 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
 import { geminiChannels, type DiogenesApi } from '../shared/gemini'
 
-// Custom APIs for renderer
-const api: DiogenesApi = {
-  gemini: {
-    buildCurrentGraph: () => ipcRenderer.invoke(geminiChannels.buildCurrentGraph),
-    proposeEdit: (graph, png) => ipcRenderer.invoke(geminiChannels.proposeEdit, graph, png)
+export type GithubUser = { login: string; name: string | null }
+export type DeviceCode = { userCode: string; verificationUri: string }
+export type GithubRepo = {
+  id: number
+  fullName: string
+  private: boolean
+  description: string | null
+  defaultBranch: string
+  updatedAt: string
+}
+
+const gemini: DiogenesApi['gemini'] = {
+  buildCurrentGraph: () => ipcRenderer.invoke(geminiChannels.buildCurrentGraph),
+  proposeEdit: (graph, png) => ipcRenderer.invoke(geminiChannels.proposeEdit, graph, png)
+}
+
+const api = {
+  gemini,
+  github: {
+    getUser: (): Promise<GithubUser | null> => ipcRenderer.invoke('github:getUser'),
+    startLogin: (): Promise<DeviceCode> => ipcRenderer.invoke('github:startLogin'),
+    finishLogin: (): Promise<GithubUser> => ipcRenderer.invoke('github:finishLogin'),
+    logout: (): Promise<void> => ipcRenderer.invoke('github:logout'),
+    listRepos: (): Promise<GithubRepo[]> => ipcRenderer.invoke('github:listRepos')
   }
 }
 
-// Use `contextBridge` APIs to expose Electron APIs to
-// renderer only if context isolation is enabled, otherwise
-// just add to the DOM global.
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
-    contextBridge.exposeInMainWorld('api', api)
-  } catch (error) {
-    console.error(error)
-  }
-} else {
-  // @ts-ignore (define in dts)
-  window.electron = electronAPI
-  // @ts-ignore (define in dts)
-  window.api = api
-}
+export type Api = typeof api
+
+contextBridge.exposeInMainWorld('api', api)
